@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto"
-
 import { config as loadDotenv } from "dotenv"
 import { sql } from "drizzle-orm"
 
+import { hashPassword } from "../lib/auth/password"
 import { createDb } from "../lib/db/create-db"
 import {
   consumableItems,
@@ -17,11 +16,6 @@ loadDotenv({ path: ".env.local" })
 loadDotenv()
 
 const db = createDb()
-
-function seedHash(password: string) {
-  // Placeholder hash for initial seed only. Replace with proper hasher during auth implementation.
-  return `seed-sha256:${createHash("sha256").update(password).digest("hex")}`
-}
 
 async function truncateAll() {
   await db.execute(sql`
@@ -52,6 +46,8 @@ async function main() {
 
   await truncateAll()
 
+  const defaultPasswordHash = await hashPassword("password")
+
   const insertedLabs = await db
     .insert(labs)
     .values([
@@ -72,7 +68,7 @@ async function main() {
         fullName: "Admin Lab",
         email: "admin@silab-kl.local",
         role: "admin",
-        passwordHash: seedHash("password"),
+        passwordHash: defaultPasswordHash,
       },
       {
         username: "plp.suryani",
@@ -80,7 +76,7 @@ async function main() {
         fullName: "Dr. Suryani",
         email: "suryani@silab-kl.local",
         role: "petugas_plp",
-        passwordHash: seedHash("password"),
+        passwordHash: defaultPasswordHash,
       },
       {
         username: "plp.hartono",
@@ -88,28 +84,28 @@ async function main() {
         fullName: "Dr. Hartono",
         email: "hartono@silab-kl.local",
         role: "petugas_plp",
-        passwordHash: seedHash("password"),
+        passwordHash: defaultPasswordHash,
       },
       {
         username: "P27834021001",
         nim: "P27834021001",
         fullName: "Siti Aminah",
         role: "mahasiswa",
-        passwordHash: seedHash("password"),
+        passwordHash: defaultPasswordHash,
       },
       {
         username: "P27834021015",
         nim: "P27834021015",
         fullName: "Ahmad Fauzi",
         role: "mahasiswa",
-        passwordHash: seedHash("password"),
+        passwordHash: defaultPasswordHash,
       },
       {
         username: "P27834021008",
         nim: "P27834021008",
         fullName: "Dewi Lestari",
         role: "mahasiswa",
-        passwordHash: seedHash("password"),
+        passwordHash: defaultPasswordHash,
       },
     ])
     .returning({ id: users.id, username: users.username })

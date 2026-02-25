@@ -1,133 +1,205 @@
-"use client"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { redirect } from "next/navigation"
 
-import { consumables, materialRequests } from "@/lib/mock-data"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Progress } from "@/components/ui/progress"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { AlertTriangle, Package, TrendingDown } from "lucide-react"
+  ConsumablesPageClient,
+  type ConsumableCreateLabOption,
+  type ConsumableCreateItemOption,
+  type ConsumableStockRow,
+  type MaterialRequestRow,
+} from "@/components/consumables/consumables-page-client"
+import { getServerAuthSession } from "@/lib/auth/server"
+import { db } from "@/lib/db/client"
+import {
+  consumableItems,
+  labs,
+  materialRequestItems,
+  materialRequests,
+  userLabAssignments,
+  users,
+} from "@/lib/db/schema"
 
-const requestStatusConfig = {
-  pending: { label: "Menunggu", className: "bg-warning/10 text-warning-foreground border-warning/20" },
-  approved: { label: "Disetujui", className: "bg-primary/10 text-primary border-primary/20" },
-  fulfilled: { label: "Terpenuhi", className: "bg-success/10 text-success-foreground border-success/20" },
+export const dynamic = "force-dynamic"
+
+type Role = "admin" | "mahasiswa" | "petugas_plp"
+
+async function getAccessibleLabIds(role: Role, userId: string) {
+  if (role === "admin" || role === "mahasiswa") return null
+  const rows = await db
+    .select({ labId: userLabAssignments.labId })
+    .from(userLabAssignments)
+    .where(eq(userLabAssignments.userId, userId))
+  return rows.map((r) => r.labId)
 }
 
-export default function ConsumablesPage() {
-  const lowStockItems = consumables.filter((c) => c.stock <= c.minStock)
+async function getConsumablesData(role: Role, userId: string, accessibleLabIds: string[] | null) {
+  const stockWhere =
+    role === "petugas_plp" && accessibleLabIds
+      ? accessibleLabIds.length > 0
+        ? inArray(consumableItems.labId, accessibleLabIds)
+        : sql`false`
+      : undefined
+
+  const requestWhere =
+    role === "admin"
+      ? undefined
+      : role === "mahasiswa"
+        ? eq(materialRequests.requesterUserId, userId)
+        : accessibleLabIds && accessibleLabIds.length > 0
+          ? inArray(materialRequests.labId, accessibleLabIds)
+          : sql`false`
+
+  const [stockRows, requestRows, requestLineRows, labRows, createItemRows] = await Promise.all([
+    db
+      .select({
+        id: consumableItems.id,
+        labId: consumableItems.labId,
+        code: consumableItems.code,
+        name: consumableItems.name,
+        unit: consumableItems.unit,
+        stock: consumableItems.stockQty,
+        minStock: consumableItems.minStockQty,
+        category: consumableItems.category,
+        lab: labs.name,
+      })
+      .from(consumableItems)
+      .innerJoin(labs, eq(consumableItems.labId, labs.id))
+      .where(
+        and(
+          eq(consumableItems.isActive, true),
+          stockWhere,
+        ),
+      )
+      .orderBy(asc(labs.name), asc(consumableItems.name)),
+    db
+      .select({
+        id: materialRequests.id,
+        code: materialRequests.code,
+        labId: materialRequests.labId,
+        requestorUserId: materialRequests.requesterUserId,
+        requestor: sql<string>`coalesce(${users.fullName}, '-')`,
+        labName: labs.name,
+        date: materialRequests.requestedAt,
+        status: materialRequests.status,
+        note: materialRequests.note,
+        items: sql<string>`coalesce(string_agg(concat(${consumableItems.name}, ' (', ${materialRequestItems.qtyRequested}, ' ', ${consumableItems.unit}, ')'), ', ' order by ${consumableItems.name}), '-')`,
+      })
+      .from(materialRequests)
+      .innerJoin(labs, eq(materialRequests.labId, labs.id))
+      .innerJoin(users, eq(materialRequests.requesterUserId, users.id))
+      .leftJoin(materialRequestItems, eq(materialRequestItems.requestId, materialRequests.id))
+      .leftJoin(consumableItems, eq(materialRequestItems.consumableItemId, consumableItems.id))
+      .where(requestWhere)
+      .groupBy(materialRequests.id, labs.name, users.fullName)
+      .orderBy(desc(materialRequests.requestedAt))
+      .limit(20),
+    db
+      .select({
+        requestId: materialRequestItems.requestId,
+        consumableId: materialRequestItems.consumableItemId,
+        name: consumableItems.name,
+        unit: consumableItems.unit,
+        qtyRequested: materialRequestItems.qtyRequested,
+        qtyFulfilled: materialRequestItems.qtyFulfilled,
+      })
+      .from(materialRequestItems)
+      .innerJoin(consumableItems, eq(consumableItems.id, materialRequestItems.consumableItemId)),
+    db
+      .select({ id: labs.id, name: labs.name })
+      .from(labs)
+      .where(
+        role === "petugas_plp" && accessibleLabIds
+          ? accessibleLabIds.length > 0
+            ? inArray(labs.id, accessibleLabIds)
+            : sql`false`
+          : undefined,
+      )
+      .orderBy(asc(labs.name)),
+    db
+      .select({
+        id: consumableItems.id,
+        labId: consumableItems.labId,
+        label: sql<string>`concat(${consumableItems.name}, ' - ', ${labs.name}, ' (stok ', ${consumableItems.stockQty}, ' ', ${consumableItems.unit}, ')')`,
+        stockQty: consumableItems.stockQty,
+        unit: consumableItems.unit,
+      })
+      .from(consumableItems)
+      .innerJoin(labs, eq(labs.id, consumableItems.labId))
+      .where(and(eq(consumableItems.isActive, true), stockWhere))
+      .orderBy(asc(labs.name), asc(consumableItems.name)),
+  ])
+
+  const consumables: ConsumableStockRow[] = stockRows.map((row) => ({
+    id: row.id,
+    labId: row.labId,
+    code: row.code,
+    name: row.name,
+    unit: row.unit,
+    stock: row.stock,
+    minStock: row.minStock,
+    category: row.category,
+    lab: row.lab,
+  }))
+
+  const requestLineMap = new Map<string, MaterialRequestRow["lines"]>()
+  for (const line of requestLineRows) {
+    const list = requestLineMap.get(line.requestId) ?? []
+    list.push({
+      consumableId: line.consumableId,
+      name: line.name,
+      unit: line.unit,
+      qtyRequested: line.qtyRequested,
+      qtyFulfilled: line.qtyFulfilled,
+    })
+    requestLineMap.set(line.requestId, list)
+  }
+
+  const requests: MaterialRequestRow[] = requestRows.map((row) => ({
+    id: row.id,
+    code: row.code,
+    labId: row.labId,
+    requestorUserId: row.requestorUserId,
+    requestor: row.requestor,
+    lab: row.labName,
+    items: row.items,
+    date: row.date.toISOString().slice(0, 10),
+    status: row.status,
+    note: row.note,
+    lines: requestLineMap.get(row.id) ?? [],
+  }))
+
+  const createLabs: ConsumableCreateLabOption[] = labRows.map((r) => ({ id: r.id, name: r.name }))
+  const createItems: ConsumableCreateItemOption[] = createItemRows.map((r) => ({
+    id: r.id,
+    labId: r.labId,
+    label: r.label,
+    stockQty: r.stockQty,
+    unit: r.unit,
+  }))
+
+  return { consumables, requests, createLabs, createItems }
+}
+
+export default async function ConsumablesPage() {
+  const session = await getServerAuthSession()
+  if (!session?.user?.id || !session.user.role) redirect("/")
+
+  const role = session.user.role as Role
+  const accessibleLabIds = await getAccessibleLabIds(role, session.user.id)
+  const { consumables, requests, createLabs, createItems } = await getConsumablesData(
+    role,
+    session.user.id,
+    accessibleLabIds,
+  )
 
   return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
-      {/* Low Stock Alert */}
-      {lowStockItems.length > 0 && (
-        <Card className="border-warning/20 bg-warning/5 shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
-            <AlertTriangle className="size-5 shrink-0 text-warning-foreground" />
-            <div>
-              <p className="text-sm font-medium text-foreground">Peringatan Stok Rendah</p>
-              <p className="text-xs text-muted-foreground">
-                {lowStockItems.length} bahan di bawah stok minimum: {lowStockItems.map(i => i.name).join(", ")}
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
-
-      <Tabs defaultValue="stock" className="flex flex-col gap-4">
-        <TabsList className="w-fit">
-          <TabsTrigger value="stock">Stok Bahan</TabsTrigger>
-          <TabsTrigger value="requests">Permintaan</TabsTrigger>
-        </TabsList>
-
-        <TabsContent value="stock" className="flex flex-col gap-4 mt-0">
-          {/* Stock Cards */}
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {consumables.map((item) => {
-              const isLow = item.stock <= item.minStock
-              const stockPercentage = Math.min((item.stock / (item.minStock * 3)) * 100, 100)
-              return (
-                <Card key={item.id} className={`border-border/50 bg-card shadow-sm ${isLow ? "border-warning/30" : ""}`}>
-                  <CardContent className="flex flex-col gap-3 p-4">
-                    <div className="flex items-start justify-between">
-                      <div className="flex items-center gap-2">
-                        <div className={`flex size-9 items-center justify-center rounded-lg ${isLow ? "bg-warning/10" : "bg-secondary"}`}>
-                          {isLow ? <TrendingDown className="size-4 text-warning-foreground" /> : <Package className="size-4 text-muted-foreground" />}
-                        </div>
-                        <div>
-                          <p className="text-sm font-medium text-card-foreground">{item.name}</p>
-                          <p className="text-xs text-muted-foreground">{item.category}</p>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="flex flex-col gap-1.5">
-                      <div className="flex items-center justify-between text-xs">
-                        <span className="text-muted-foreground">Stok: {item.stock} {item.unit}</span>
-                        <span className="text-muted-foreground">Min: {item.minStock}</span>
-                      </div>
-                      <Progress
-                        value={stockPercentage}
-                        className={`h-2 ${isLow ? "[&>div]:bg-warning" : ""}`}
-                      />
-                    </div>
-                    <p className="text-xs text-muted-foreground">
-                      Terakhir restock: {item.lastRestocked}
-                    </p>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        </TabsContent>
-
-        <TabsContent value="requests" className="mt-0">
-          <Card className="border-border/50 bg-card shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-card-foreground">Permintaan Bahan</CardTitle>
-            </CardHeader>
-            <CardContent className="px-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="font-semibold">ID</TableHead>
-                      <TableHead className="font-semibold">Pemohon</TableHead>
-                      <TableHead className="font-semibold">Item</TableHead>
-                      <TableHead className="font-semibold">Tanggal</TableHead>
-                      <TableHead className="font-semibold">Status</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {materialRequests.map((req) => {
-                      const status = requestStatusConfig[req.status]
-                      return (
-                        <TableRow key={req.id} className="hover:bg-muted/30">
-                          <TableCell className="font-mono text-xs text-muted-foreground">{req.id}</TableCell>
-                          <TableCell className="font-medium text-foreground">{req.requestor}</TableCell>
-                          <TableCell className="text-muted-foreground">{req.items}</TableCell>
-                          <TableCell className="text-muted-foreground">{req.date}</TableCell>
-                          <TableCell>
-                            <Badge variant="outline" className={status.className}>
-                              {status.label}
-                            </Badge>
-                          </TableCell>
-                        </TableRow>
-                      )
-                    })}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
+    <ConsumablesPageClient
+      role={role}
+      currentUserId={session.user.id}
+      consumables={consumables}
+      materialRequests={requests}
+      masterLabs={createLabs}
+      createOptions={{ labs: createLabs, items: createItems }}
+    />
   )
 }

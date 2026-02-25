@@ -1,10 +1,16 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { Progress } from "@/components/ui/progress"
-import { labOverview } from "@/lib/mock-data"
 import { FlaskConical } from "lucide-react"
 
-export function LabOverview() {
+export type LabOverviewItem = {
+  name: string
+  toolCount: number
+  usageRate: number
+  status: "active" | "maintenance"
+}
+
+export function LabOverview({ items }: { items: LabOverviewItem[] }) {
   return (
     <Card className="border-border/50 bg-card shadow-sm">
       <CardHeader className="pb-3">
@@ -12,7 +18,12 @@ export function LabOverview() {
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-4">
-          {labOverview.map((lab) => (
+          {items.length === 0 && (
+            <div className="rounded-lg border border-border/50 bg-background p-4 text-sm text-muted-foreground">
+              Belum ada data laboratorium.
+            </div>
+          )}
+          {items.map((lab) => (
             <div key={lab.name} className="flex flex-col gap-2 rounded-lg border border-border/50 bg-background p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">

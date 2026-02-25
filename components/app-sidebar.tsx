@@ -2,6 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
+import { signOut, useSession } from "next-auth/react"
 import {
   LayoutDashboard,
   Wrench,
@@ -9,6 +10,7 @@ import {
   FlaskConical,
   CalendarDays,
   GraduationCap,
+  KeyRound,
   LogOut,
 } from "lucide-react"
 import {
@@ -25,21 +27,55 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar"
 import { Avatar, AvatarFallback } from "@/components/ui/avatar"
+import { Button } from "@/components/ui/button"
 
-const mainNavItems = [
-  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard },
-  { title: "Alat Laboratorium", href: "/dashboard/tools", icon: Wrench },
-  { title: "Peminjaman", href: "/dashboard/borrowing", icon: ArrowLeftRight },
-  { title: "Bahan Habis Pakai", href: "/dashboard/consumables", icon: FlaskConical },
-  { title: "Penggunaan Lab", href: "/dashboard/lab-usage", icon: CalendarDays },
+type Role = "admin" | "mahasiswa" | "petugas_plp"
+
+const mainNavItems: Array<{
+  title: string
+  href: string
+  icon: typeof LayoutDashboard
+  roles: Role[]
+}> = [
+  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "petugas_plp"] },
+  { title: "Alat Laboratorium", href: "/dashboard/tools", icon: Wrench, roles: ["admin", "petugas_plp"] },
+  { title: "Peminjaman", href: "/dashboard/borrowing", icon: ArrowLeftRight, roles: ["admin", "petugas_plp"] },
+  { title: "Bahan Habis Pakai", href: "/dashboard/consumables", icon: FlaskConical, roles: ["admin", "petugas_plp"] },
+  { title: "Penggunaan Lab", href: "/dashboard/lab-usage", icon: CalendarDays, roles: ["admin", "petugas_plp"] },
 ]
 
-const studentNavItems = [
-  { title: "Katalog Alat", href: "/dashboard/student-tools", icon: GraduationCap },
-]
+const studentNavItems: Array<{
+  title: string
+  href: string
+  icon: typeof GraduationCap
+  roles: Role[]
+}> = [{ title: "Katalog Alat", href: "/dashboard/student-tools", icon: GraduationCap, roles: ["mahasiswa"] }]
+
+const accountNavItems: Array<{
+  title: string
+  href: string
+  icon: typeof KeyRound
+  roles: Role[]
+}> = [{ title: "Keamanan Akun", href: "/dashboard/account/security", icon: KeyRound, roles: ["admin", "petugas_plp", "mahasiswa"] }]
 
 export function AppSidebar() {
   const pathname = usePathname()
+  const { data: session } = useSession()
+
+  const role = (session?.user?.role as Role | undefined) ?? "mahasiswa"
+  const visibleMainNav = mainNavItems.filter((item) => item.roles.includes(role))
+  const visibleStudentNav = studentNavItems.filter((item) => item.roles.includes(role))
+  const visibleAccountNav = accountNavItems.filter((item) => item.roles.includes(role))
+  const displayName = session?.user?.name ?? "Pengguna"
+  const displayEmail = session?.user?.email ?? session?.user?.username ?? "-"
+  const initials = displayName
+    .split(" ")
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((word) => word[0]?.toUpperCase())
+    .join("") || "U"
+  const roleLabel =
+    role === "admin" ? "Admin" : role === "petugas_plp" ? "Petugas PLP" : "Mahasiswa"
 
   return (
     <Sidebar collapsible="icon">
@@ -60,7 +96,7 @@ export function AppSidebar() {
           <SidebarGroupLabel>Menu Utama</SidebarGroupLabel>
           <SidebarGroupContent>
             <SidebarMenu>
-              {mainNavItems.map((item) => (
+              {visibleMainNav.map((item) => (
                 <SidebarMenuItem key={item.href}>
                   <SidebarMenuButton
                     asChild
@@ -77,50 +113,82 @@ export function AppSidebar() {
             </SidebarMenu>
           </SidebarGroupContent>
         </SidebarGroup>
-        <SidebarSeparator />
-        <SidebarGroup>
-          <SidebarGroupLabel>Mahasiswa</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {studentNavItems.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={pathname === item.href}
-                    tooltip={item.title}
-                  >
-                    <Link href={item.href}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {visibleStudentNav.length > 0 && (
+          <>
+            <SidebarSeparator />
+            <SidebarGroup>
+              <SidebarGroupLabel>Mahasiswa</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {visibleStudentNav.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton
+                        asChild
+                        isActive={pathname === item.href}
+                        tooltip={item.title}
+                      >
+                        <Link href={item.href}>
+                          <item.icon className="size-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
+        {visibleAccountNav.length > 0 && (
+          <>
+            <SidebarSeparator />
+            <SidebarGroup>
+              <SidebarGroupLabel>Akun</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {visibleAccountNav.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.title}>
+                        <Link href={item.href}>
+                          <item.icon className="size-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
       </SidebarContent>
       <SidebarFooter>
         <SidebarMenu>
           <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Admin Profile" size="lg">
+            <SidebarMenuButton tooltip="Profil Pengguna" size="lg">
               <Avatar className="size-6">
                 <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                  AD
+                  {initials}
                 </AvatarFallback>
               </Avatar>
               <div className="flex flex-col gap-0.5 leading-none">
-                <span className="text-xs font-medium">Admin Lab</span>
-                <span className="text-xs text-sidebar-foreground/60">admin@poltekkes-sby.ac.id</span>
+                <span className="text-xs font-medium">{displayName}</span>
+                <span className="text-xs text-sidebar-foreground/60">{roleLabel}</span>
+                <span className="text-xs text-sidebar-foreground/60 truncate">{displayEmail}</span>
               </div>
             </SidebarMenuButton>
           </SidebarMenuItem>
           <SidebarMenuItem>
             <SidebarMenuButton asChild tooltip="Keluar">
-              <Link href="/">
+              <Button
+                type="button"
+                variant="ghost"
+                className="h-auto w-full justify-start px-2 py-1.5"
+                onClick={() => signOut({ callbackUrl: "/" })}
+              >
                 <LogOut className="size-4" />
                 <span>Keluar</span>
-              </Link>
+              </Button>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

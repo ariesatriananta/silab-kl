@@ -1,7 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
 import { ScrollArea } from "@/components/ui/scroll-area"
-import { recentActivities } from "@/lib/mock-data"
 import { ArrowUpRight, ArrowDownLeft, AlertTriangle } from "lucide-react"
 
 const typeConfig = {
@@ -10,7 +9,15 @@ const typeConfig = {
   damage: { icon: AlertTriangle, label: "Rusak", className: "bg-destructive/10 text-destructive border-destructive/20" },
 }
 
-export function RecentActivity() {
+export type RecentActivityItem = {
+  id: string | number
+  user: string
+  action: string
+  time: string
+  type: keyof typeof typeConfig
+}
+
+export function RecentActivity({ items }: { items: RecentActivityItem[] }) {
   return (
     <Card className="border-border/50 bg-card shadow-sm">
       <CardHeader className="pb-3">
@@ -19,7 +26,12 @@ export function RecentActivity() {
       <CardContent className="px-0">
         <ScrollArea className="h-[300px] px-6">
           <div className="flex flex-col gap-4">
-            {recentActivities.map((activity) => {
+            {items.length === 0 && (
+              <div className="py-10 text-center text-sm text-muted-foreground">
+                Belum ada aktivitas terbaru.
+              </div>
+            )}
+            {items.map((activity) => {
               const config = typeConfig[activity.type]
               const Icon = config.icon
               return (

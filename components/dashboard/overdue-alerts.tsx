@@ -1,9 +1,15 @@
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Badge } from "@/components/ui/badge"
-import { overdueAlerts } from "@/lib/mock-data"
 import { AlertTriangle, Clock } from "lucide-react"
 
-export function OverdueAlerts() {
+export type OverdueAlertItem = {
+  id: string | number
+  tool: string
+  borrower: string
+  daysOverdue: number
+}
+
+export function OverdueAlerts({ items }: { items: OverdueAlertItem[] }) {
   return (
     <Card className="border-destructive/20 bg-card shadow-sm">
       <CardHeader className="pb-3">
@@ -14,7 +20,12 @@ export function OverdueAlerts() {
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-3">
-          {overdueAlerts.map((alert) => (
+          {items.length === 0 && (
+            <div className="rounded-lg border border-border/50 bg-background p-4 text-sm text-muted-foreground">
+              Tidak ada keterlambatan saat ini.
+            </div>
+          )}
+          {items.map((alert) => (
             <div key={alert.id} className="flex items-center justify-between rounded-lg border border-destructive/10 bg-destructive/5 p-3">
               <div className="flex flex-col gap-0.5">
                 <span className="text-sm font-medium text-card-foreground">{alert.tool}</span>

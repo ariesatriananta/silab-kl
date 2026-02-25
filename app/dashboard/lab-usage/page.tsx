@@ -1,115 +1,163 @@
-import { labSchedules, usageHistory } from "@/lib/mock-data"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
+import { redirect } from "next/navigation"
+import { asc, desc, eq, inArray, sql } from "drizzle-orm"
+
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
-import { CalendarDays, Clock, Users, GraduationCap } from "lucide-react"
+  LabUsagePageClient,
+  type LabUsageHistoryRow,
+  type LabUsageLabOption,
+  type LabUsageScheduleRow,
+} from "@/components/lab-usage/lab-usage-page-client"
+import { getServerAuthSession } from "@/lib/auth/server"
+import { db } from "@/lib/db/client"
+import { labSchedules, labUsageLogs, labs, userLabAssignments } from "@/lib/db/schema"
 
-export default function LabUsagePage() {
-  return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
-      <Tabs defaultValue="schedule" className="flex flex-col gap-4">
-        <TabsList className="w-fit">
-          <TabsTrigger value="schedule">Jadwal Lab</TabsTrigger>
-          <TabsTrigger value="history">Riwayat</TabsTrigger>
-        </TabsList>
+type Role = "admin" | "mahasiswa" | "petugas_plp"
 
-        <TabsContent value="schedule" className="mt-0">
-          <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
-            {labSchedules.map((schedule) => {
-              const isFull = schedule.enrolled >= schedule.capacity
-              return (
-                <Card key={schedule.id} className="border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow">
-                  <CardContent className="flex flex-col gap-4 p-5">
-                    <div className="flex items-start justify-between">
-                      <div className="flex flex-col gap-1">
-                        <h3 className="text-sm font-semibold text-card-foreground">{schedule.course}</h3>
-                        <p className="text-xs text-muted-foreground">{schedule.lab}</p>
-                      </div>
-                      <Badge
-                        variant="outline"
-                        className={isFull
-                          ? "bg-destructive/10 text-destructive border-destructive/20"
-                          : "bg-success/10 text-success-foreground border-success/20"
-                        }
-                      >
-                        {isFull ? "Penuh" : "Tersedia"}
-                      </Badge>
-                    </div>
-                    <div className="grid grid-cols-2 gap-3">
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <CalendarDays className="size-4 shrink-0" />
-                        <span>{schedule.date}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Clock className="size-4 shrink-0" />
-                        <span>{schedule.time}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <GraduationCap className="size-4 shrink-0" />
-                        <span>{schedule.group}</span>
-                      </div>
-                      <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                        <Users className="size-4 shrink-0" />
-                        <span>{schedule.enrolled}/{schedule.capacity} mhs</span>
-                      </div>
-                    </div>
-                    <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
-                      <span className="text-xs text-muted-foreground">Dosen Pengampu</span>
-                      <span className="text-xs font-medium text-foreground">{schedule.instructor}</span>
-                    </div>
-                  </CardContent>
-                </Card>
-              )
-            })}
-          </div>
-        </TabsContent>
+function fmtDate(date: Date) {
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeZone: "Asia/Jakarta",
+  }).format(date)
+}
 
-        <TabsContent value="history" className="mt-0">
-          <Card className="border-border/50 bg-card shadow-sm">
-            <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-card-foreground">Riwayat Penggunaan Lab</CardTitle>
-            </CardHeader>
-            <CardContent className="px-0">
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow className="bg-muted/50">
-                      <TableHead className="font-semibold">ID</TableHead>
-                      <TableHead className="font-semibold">Laboratorium</TableHead>
-                      <TableHead className="font-semibold">Tanggal</TableHead>
-                      <TableHead className="font-semibold">Mata Kuliah</TableHead>
-                      <TableHead className="font-semibold">Kelompok</TableHead>
-                      <TableHead className="font-semibold">Jumlah Mhs</TableHead>
-                      <TableHead className="font-semibold">Durasi</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {usageHistory.map((usage) => (
-                      <TableRow key={usage.id} className="hover:bg-muted/30">
-                        <TableCell className="font-mono text-xs text-muted-foreground">{usage.id}</TableCell>
-                        <TableCell className="font-medium text-foreground">{usage.lab}</TableCell>
-                        <TableCell className="text-muted-foreground">{usage.date}</TableCell>
-                        <TableCell className="text-muted-foreground">{usage.course}</TableCell>
-                        <TableCell className="text-muted-foreground">{usage.group}</TableCell>
-                        <TableCell className="text-muted-foreground">{usage.students}</TableCell>
-                        <TableCell className="text-muted-foreground">{usage.duration}</TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            </CardContent>
-          </Card>
-        </TabsContent>
-      </Tabs>
-    </div>
-  )
+function fmtDateInput(date: Date) {
+  const dt = new Date(date.toLocaleString("en-US", { timeZone: "Asia/Jakarta" }))
+  const yyyy = dt.getFullYear()
+  const mm = String(dt.getMonth() + 1).padStart(2, "0")
+  const dd = String(dt.getDate()).padStart(2, "0")
+  return `${yyyy}-${mm}-${dd}`
+}
+
+function fmtTime(date: Date) {
+  return new Intl.DateTimeFormat("id-ID", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Jakarta",
+  }).format(date)
+}
+
+function fmtTimeInput(date: Date) {
+  const parts = new Intl.DateTimeFormat("en-GB", {
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Jakarta",
+  }).formatToParts(date)
+  const hh = parts.find((p) => p.type === "hour")?.value ?? "00"
+  const mm = parts.find((p) => p.type === "minute")?.value ?? "00"
+  return `${hh}:${mm}`
+}
+
+function fmtDuration(start: Date, end: Date) {
+  const minutes = Math.max(0, Math.round((end.getTime() - start.getTime()) / 60000))
+  const h = Math.floor(minutes / 60)
+  const m = minutes % 60
+  if (h > 0 && m > 0) return `${h} jam ${m} menit`
+  if (h > 0) return `${h} jam`
+  return `${m} menit`
+}
+
+async function getAccessibleLabIds(role: Role, userId: string) {
+  if (role === "admin") return null
+  const rows = await db
+    .select({ labId: userLabAssignments.labId })
+    .from(userLabAssignments)
+    .where(eq(userLabAssignments.userId, userId))
+  return rows.map((r) => r.labId)
+}
+
+export default async function LabUsagePage() {
+  const session = await getServerAuthSession()
+  if (!session?.user?.id || !session.user.role) redirect("/")
+
+  const role = session.user.role as Role
+  if (role === "mahasiswa") redirect("/dashboard/student-tools")
+
+  const accessibleLabIds = await getAccessibleLabIds(role, session.user.id)
+  const scheduleFilter =
+    role === "admin"
+      ? undefined
+      : accessibleLabIds && accessibleLabIds.length > 0
+        ? inArray(labSchedules.labId, accessibleLabIds)
+        : sql`false`
+  const usageFilter =
+    role === "admin"
+      ? undefined
+      : accessibleLabIds && accessibleLabIds.length > 0
+        ? inArray(labUsageLogs.labId, accessibleLabIds)
+        : sql`false`
+  const labsFilter =
+    role === "admin"
+      ? undefined
+      : accessibleLabIds && accessibleLabIds.length > 0
+        ? inArray(labs.id, accessibleLabIds)
+        : sql`false`
+
+  const [labRows, scheduleRowsRaw, historyRowsRaw] = await Promise.all([
+    db.select({ id: labs.id, name: labs.name }).from(labs).where(labsFilter).orderBy(asc(labs.name)),
+    db
+      .select({
+        id: labSchedules.id,
+        labId: labSchedules.labId,
+        labName: labs.name,
+        courseName: labSchedules.courseName,
+        groupName: labSchedules.groupName,
+        instructorName: labSchedules.instructorName,
+        scheduledStartAt: labSchedules.scheduledStartAt,
+        scheduledEndAt: labSchedules.scheduledEndAt,
+        capacity: labSchedules.capacity,
+        enrolledCount: labSchedules.enrolledCount,
+      })
+      .from(labSchedules)
+      .innerJoin(labs, eq(labs.id, labSchedules.labId))
+      .where(scheduleFilter)
+      .orderBy(asc(labSchedules.scheduledStartAt))
+      .limit(100),
+    db
+      .select({
+        id: labUsageLogs.id,
+        labId: labUsageLogs.labId,
+        labName: labs.name,
+        courseName: labUsageLogs.courseName,
+        groupName: labUsageLogs.groupName,
+        studentCount: labUsageLogs.studentCount,
+        startedAt: labUsageLogs.startedAt,
+        endedAt: labUsageLogs.endedAt,
+      })
+      .from(labUsageLogs)
+      .innerJoin(labs, eq(labs.id, labUsageLogs.labId))
+      .where(usageFilter)
+      .orderBy(desc(labUsageLogs.startedAt))
+      .limit(100),
+  ])
+
+  const labOptions: LabUsageLabOption[] = labRows.map((r) => ({ id: r.id, name: r.name }))
+  const schedules: LabUsageScheduleRow[] = scheduleRowsRaw.map((r) => ({
+    id: r.id,
+    labId: r.labId,
+    labName: r.labName,
+    courseName: r.courseName,
+    groupName: r.groupName,
+    instructorName: r.instructorName,
+    scheduledDate: fmtDateInput(r.scheduledStartAt),
+    startTime: fmtTimeInput(r.scheduledStartAt),
+    endTime: fmtTimeInput(r.scheduledEndAt),
+    capacity: r.capacity,
+    enrolledCount: r.enrolledCount,
+  }))
+  const history: LabUsageHistoryRow[] = historyRowsRaw.map((r) => ({
+    id: r.id.slice(0, 8),
+    labId: r.labId,
+    labName: r.labName,
+    courseName: r.courseName,
+    groupName: r.groupName,
+    studentCount: r.studentCount,
+    date: fmtDate(r.startedAt),
+    startTime: fmtTime(r.startedAt),
+    endTime: fmtTime(r.endedAt),
+    durationLabel: fmtDuration(r.startedAt, r.endedAt),
+  }))
+
+  return <LabUsagePageClient role={role as "admin" | "petugas_plp"} labs={labOptions} schedules={schedules} history={history} />
 }

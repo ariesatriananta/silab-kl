@@ -1,6 +1,7 @@
 "use client"
 
-import { useState } from "react"
+import { useEffect, useState } from "react"
+import { signIn, useSession } from "next-auth/react"
 import { useRouter } from "next/navigation"
 import Image from "next/image"
 import { Button } from "@/components/ui/button"
@@ -8,18 +9,47 @@ import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Card, CardContent, CardHeader } from "@/components/ui/card"
 import { Eye, EyeOff, LogIn } from "lucide-react"
+import { Alert, AlertDescription } from "@/components/ui/alert"
 
 export default function LoginPage() {
   const router = useRouter()
+  const { status } = useSession()
   const [showPassword, setShowPassword] = useState(false)
   const [isLoading, setIsLoading] = useState(false)
+  const [errorMessage, setErrorMessage] = useState<string | null>(null)
+  const [identifier, setIdentifier] = useState("admin")
+  const [password, setPassword] = useState("password")
 
-  const handleLogin = (e: React.FormEvent) => {
+  useEffect(() => {
+    if (status === "authenticated") {
+      router.replace("/dashboard")
+    }
+  }, [router, status])
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
-    setTimeout(() => {
-      router.push("/dashboard")
-    }, 800)
+    setErrorMessage(null)
+
+    const result = await signIn("credentials", {
+      redirect: false,
+      identifier,
+      password,
+      callbackUrl: "/dashboard",
+    })
+
+    if (result?.error) {
+      if (result.error === "TooManyAttempts") {
+        setErrorMessage("Terlalu banyak percobaan login. Coba lagi beberapa menit lagi.")
+      } else {
+        setErrorMessage("Login gagal. Periksa username/NIP/NIM dan password.")
+      }
+      setIsLoading(false)
+      return
+    }
+
+    router.push(result?.url ?? "/dashboard")
+    router.refresh()
   }
 
   return (
@@ -52,15 +82,24 @@ export default function LoginPage() {
         </CardHeader>
         <CardContent className="px-8 pb-8 pt-4">
           <form onSubmit={handleLogin} className="flex flex-col gap-5">
+            {errorMessage && (
+              <Alert variant="destructive">
+                <AlertDescription>
+                  {errorMessage}
+                </AlertDescription>
+              </Alert>
+            )}
             <div className="flex flex-col gap-2">
               <Label htmlFor="username" className="text-sm font-medium text-foreground">
-                Username / NIP
+                Username / NIP / NIM
               </Label>
               <Input
                 id="username"
-                placeholder="Masukkan username atau NIP"
+                placeholder="Masukkan username, NIP, atau NIM"
                 className="h-11 bg-background"
-                defaultValue="admin"
+                value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)}
+                autoComplete="username"
               />
             </div>
             <div className="flex flex-col gap-2">
@@ -73,7 +112,9 @@ export default function LoginPage() {
                   type={showPassword ? "text" : "password"}
                   placeholder="Masukkan password"
                   className="h-11 bg-background pr-10"
-                  defaultValue="password"
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  autoComplete="current-password"
                 />
                 <button
                   type="button"
@@ -88,7 +129,7 @@ export default function LoginPage() {
             <Button
               type="submit"
               className="h-11 w-full font-medium"
-              disabled={isLoading}
+              disabled={isLoading || status === "loading"}
             >
               {isLoading ? (
                 <span className="flex items-center gap-2">

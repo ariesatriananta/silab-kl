@@ -1,252 +1,461 @@
-"use client"
+import { redirect } from "next/navigation"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 
-import { useState } from "react"
-import { borrowings } from "@/lib/mock-data"
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
-import { Badge } from "@/components/ui/badge"
-import { Button } from "@/components/ui/button"
 import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table"
+  BorrowingPageClient,
+  type BorrowingCreateConsumableOption,
+  type BorrowingCreateLabOption,
+  type BorrowingCreateRequesterOption,
+  type BorrowingCreateToolOption,
+  type BorrowingDetail,
+  type BorrowingListRow,
+} from "@/components/borrowing/borrowing-page-client"
+import { getServerAuthSession } from "@/lib/auth/server"
+import { db } from "@/lib/db/client"
 import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogHeader,
-  DialogTitle,
-} from "@/components/ui/dialog"
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select"
-import { Separator } from "@/components/ui/separator"
-import { Eye, CheckCircle2, XCircle, Clock, Package } from "lucide-react"
+  borrowingApprovals,
+  borrowingHandovers,
+  borrowingReturnItems,
+  borrowingReturns,
+  borrowingTransactionItems,
+  borrowingTransactions,
+  consumableItems,
+  labs,
+  toolAssets,
+  toolModels,
+  userLabAssignments,
+  users,
+} from "@/lib/db/schema"
 
-const statusConfig = {
-  active: { label: "Aktif", className: "bg-primary/10 text-primary border-primary/20" },
-  overdue: { label: "Terlambat", className: "bg-destructive/10 text-destructive border-destructive/20" },
-  returned: { label: "Dikembalikan", className: "bg-success/10 text-success-foreground border-success/20" },
-  pending: { label: "Menunggu", className: "bg-warning/10 text-warning-foreground border-warning/20" },
+export const dynamic = "force-dynamic"
+
+type Role = "admin" | "mahasiswa" | "petugas_plp"
+
+function fmtDate(date: Date | null) {
+  if (!date) return null
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeZone: "Asia/Jakarta",
+  }).format(date)
 }
 
-type BorrowingItem = typeof borrowings[number]
+function fmtDateTime(date: Date | null) {
+  if (!date) return null
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(date)
+}
 
-export default function BorrowingPage() {
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [selectedBorrowing, setSelectedBorrowing] = useState<BorrowingItem | null>(null)
+function mapBorrowingDisplayStatus(input: {
+  status: typeof borrowingTransactions.$inferSelect.status
+  dueDate: Date | null
+}) {
+  const now = Date.now()
+  const base = input.status
+  if (
+    (base === "active" || base === "partially_returned") &&
+    input.dueDate &&
+    input.dueDate.getTime() < now
+  ) {
+    return "overdue" as const
+  }
+  if (base === "submitted" || base === "pending_approval") return "pending" as const
+  return base
+}
 
-  const filtered = borrowings.filter((b) => statusFilter === "all" || b.status === statusFilter)
+async function getAccessibleLabIds(role: Role, userId: string) {
+  if (role === "admin" || role === "mahasiswa") return null
+  const assignments = await db
+    .select({ labId: userLabAssignments.labId })
+    .from(userLabAssignments)
+    .where(eq(userLabAssignments.userId, userId))
+  return assignments.map((a) => a.labId)
+}
+
+async function getBorrowingData(role: Role, userId: string) {
+  const accessibleLabIds = await getAccessibleLabIds(role, userId)
+
+  const baseWhere =
+    role === "admin"
+      ? undefined
+      : role === "mahasiswa"
+        ? eq(borrowingTransactions.requesterUserId, userId)
+        : accessibleLabIds && accessibleLabIds.length > 0
+          ? inArray(borrowingTransactions.labId, accessibleLabIds)
+          : sql`false`
+
+  const txRows = await db
+    .select({
+      id: borrowingTransactions.id,
+      code: borrowingTransactions.code,
+      labId: borrowingTransactions.labId,
+      requesterUserId: borrowingTransactions.requesterUserId,
+      createdByUserId: borrowingTransactions.createdByUserId,
+      purpose: borrowingTransactions.purpose,
+      status: borrowingTransactions.status,
+      requesterName: users.fullName,
+      requesterNim: users.nim,
+      requestedAt: borrowingTransactions.requestedAt,
+      handedOverAt: borrowingTransactions.handedOverAt,
+      dueDate: borrowingTransactions.dueDate,
+      labName: labs.name,
+    })
+    .from(borrowingTransactions)
+    .innerJoin(users, eq(users.id, borrowingTransactions.requesterUserId))
+    .innerJoin(labs, eq(labs.id, borrowingTransactions.labId))
+    .where(baseWhere)
+    .orderBy(desc(borrowingTransactions.requestedAt))
+    .limit(100)
+
+  const txIds = txRows.map((row) => row.id)
+  if (txIds.length === 0) {
+    return { rows: [] as BorrowingListRow[], details: {} as Record<string, BorrowingDetail>, accessibleLabIds }
+  }
+
+  const [
+    itemRows,
+    approvalRows,
+    approvalHistoryRows,
+    handoverHistoryRows,
+    returnCountRows,
+    returnedItemRows,
+    returnRows,
+    returnItemRows,
+  ] =
+    await Promise.all([
+      db
+        .select({
+        transactionId: borrowingTransactionItems.transactionId,
+        itemId: borrowingTransactionItems.id,
+        itemType: borrowingTransactionItems.itemType,
+        qty: borrowingTransactionItems.qtyRequested,
+        toolAssetId: borrowingTransactionItems.toolAssetId,
+        toolName: toolModels.name,
+        assetCode: toolAssets.assetCode,
+        consumableName: consumableItems.name,
+        consumableUnit: consumableItems.unit,
+      })
+      .from(borrowingTransactionItems)
+      .leftJoin(toolAssets, eq(toolAssets.id, borrowingTransactionItems.toolAssetId))
+      .leftJoin(toolModels, eq(toolModels.id, toolAssets.toolModelId))
+      .leftJoin(consumableItems, eq(consumableItems.id, borrowingTransactionItems.consumableItemId))
+      .where(inArray(borrowingTransactionItems.transactionId, txIds)),
+      db
+      .select({
+        transactionId: borrowingApprovals.transactionId,
+        count: sql<number>`count(*)`,
+      })
+      .from(borrowingApprovals)
+      .where(eq(borrowingApprovals.decision, "approved"))
+      .groupBy(borrowingApprovals.transactionId),
+      db
+      .select({
+        transactionId: borrowingApprovals.transactionId,
+        decision: borrowingApprovals.decision,
+        decidedAt: borrowingApprovals.decidedAt,
+        note: borrowingApprovals.note,
+        approverName: users.fullName,
+        approverRole: users.role,
+      })
+      .from(borrowingApprovals)
+      .innerJoin(users, eq(users.id, borrowingApprovals.approverUserId))
+      .where(inArray(borrowingApprovals.transactionId, txIds))
+      .orderBy(asc(borrowingApprovals.decidedAt)),
+      db
+        .select({
+          transactionId: borrowingHandovers.transactionId,
+          handedOverAt: borrowingHandovers.handedOverAt,
+          dueDate: borrowingHandovers.dueDate,
+          note: borrowingHandovers.note,
+          handedOverByName: users.fullName,
+        })
+        .from(borrowingHandovers)
+        .innerJoin(users, eq(users.id, borrowingHandovers.handedOverByUserId))
+        .where(inArray(borrowingHandovers.transactionId, txIds))
+        .orderBy(desc(borrowingHandovers.handedOverAt)),
+      db
+        .select({
+        transactionId: borrowingReturns.transactionId,
+        count: sql<number>`count(${borrowingReturnItems.id})`,
+      })
+      .from(borrowingReturns)
+      .leftJoin(borrowingReturnItems, eq(borrowingReturnItems.returnId, borrowingReturns.id))
+      .where(inArray(borrowingReturns.transactionId, txIds))
+      .groupBy(borrowingReturns.transactionId),
+      db
+      .select({
+        transactionItemId: borrowingReturnItems.transactionItemId,
+      })
+      .from(borrowingReturnItems)
+      .innerJoin(borrowingReturns, eq(borrowingReturns.id, borrowingReturnItems.returnId))
+      .where(inArray(borrowingReturns.transactionId, txIds)),
+      db
+      .select({
+        returnId: borrowingReturns.id,
+        transactionId: borrowingReturns.transactionId,
+        returnedAt: borrowingReturns.returnedAt,
+        note: borrowingReturns.note,
+        receivedByName: users.fullName,
+      })
+      .from(borrowingReturns)
+      .innerJoin(users, eq(users.id, borrowingReturns.receivedByUserId))
+      .where(inArray(borrowingReturns.transactionId, txIds))
+      .orderBy(desc(borrowingReturns.returnedAt)),
+      db
+      .select({
+        returnId: borrowingReturnItems.returnId,
+        transactionItemId: borrowingReturnItems.transactionItemId,
+        returnCondition: borrowingReturnItems.returnCondition,
+        note: borrowingReturnItems.note,
+        toolName: toolModels.name,
+        assetCode: toolAssets.assetCode,
+      })
+      .from(borrowingReturnItems)
+      .innerJoin(toolAssets, eq(toolAssets.id, borrowingReturnItems.toolAssetId))
+      .innerJoin(toolModels, eq(toolModels.id, toolAssets.toolModelId))
+      .innerJoin(borrowingReturns, eq(borrowingReturns.id, borrowingReturnItems.returnId))
+      .where(inArray(borrowingReturns.transactionId, txIds)),
+    ])
+
+  const txIdSet = new Set(txRows.map((row) => row.id))
+
+  const returnedItemIdSet = new Set(returnedItemRows.map((r) => r.transactionItemId))
+  const itemMap = new Map<string, BorrowingDetail["items"]>()
+  for (const row of itemRows) {
+    if (!txIdSet.has(row.transactionId)) continue
+    const list = itemMap.get(row.transactionId) ?? []
+    list.push({
+      id: row.itemId,
+      itemType: row.itemType,
+      name: row.itemType === "tool_asset" ? (row.toolName ?? "Alat") : (row.consumableName ?? "Bahan"),
+      qty: row.qty,
+      toolAssetId: row.toolAssetId,
+      assetCode: row.assetCode,
+      unit: row.consumableUnit,
+      returned: returnedItemIdSet.has(row.itemId),
+    })
+    itemMap.set(row.transactionId, list)
+  }
+
+  const approvalCountByTx = new Map(approvalRows.map((r) => [r.transactionId, Number(r.count)]))
+  const returnCountByTx = new Map(returnCountRows.map((r) => [r.transactionId, Number(r.count)]))
+  const handoverHistoryByTx = new Map<string, BorrowingDetail["handoverHistory"]>()
+  for (const row of handoverHistoryRows) {
+    if (!txIdSet.has(row.transactionId)) continue
+    const list = handoverHistoryByTx.get(row.transactionId) ?? []
+    list.push({
+      handedOverAt: fmtDateTime(row.handedOverAt) ?? "-",
+      dueDate: fmtDate(row.dueDate) ?? "-",
+      handedOverByName: row.handedOverByName,
+      note: row.note,
+    })
+    handoverHistoryByTx.set(row.transactionId, list)
+  }
+
+  const approvalHistoryByTx = new Map<string, BorrowingDetail["approvalHistory"]>()
+  for (const row of approvalHistoryRows) {
+    if (!txIdSet.has(row.transactionId)) continue
+    const list = approvalHistoryByTx.get(row.transactionId) ?? []
+    list.push({
+      approverName: row.approverName,
+      approverRole: row.approverRole,
+      decision: row.decision,
+      decidedAt: fmtDateTime(row.decidedAt) ?? "-",
+      note: row.note,
+    })
+    approvalHistoryByTx.set(row.transactionId, list)
+  }
+
+  const returnItemsByReturnId = new Map<string, NonNullable<BorrowingDetail["returnEvents"]>[number]["items"]>()
+  for (const row of returnItemRows) {
+    const list = returnItemsByReturnId.get(row.returnId) ?? []
+    list.push({
+      transactionItemId: row.transactionItemId,
+      toolName: row.toolName,
+      assetCode: row.assetCode,
+      returnCondition: row.returnCondition,
+      note: row.note,
+    })
+    returnItemsByReturnId.set(row.returnId, list)
+  }
+
+  const returnEventsByTx = new Map<string, BorrowingDetail["returnEvents"]>()
+  for (const row of returnRows) {
+    if (!txIdSet.has(row.transactionId)) continue
+    const list = returnEventsByTx.get(row.transactionId) ?? []
+    list.push({
+      returnedAt: fmtDateTime(row.returnedAt) ?? "-",
+      receivedByName: row.receivedByName,
+      note: row.note,
+      items: returnItemsByReturnId.get(row.returnId) ?? [],
+    })
+    returnEventsByTx.set(row.transactionId, list)
+  }
+
+  const rows: BorrowingListRow[] = txRows.map((row) => {
+    const status = mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate })
+    const items = itemMap.get(row.id) ?? []
+    return {
+      id: row.id,
+      code: row.code,
+      labId: row.labId,
+      requesterUserId: row.requesterUserId,
+      createdByUserId: row.createdByUserId,
+      borrower: row.requesterName,
+      nim: row.requesterNim,
+      borrowDate: fmtDate(row.handedOverAt),
+      dueDate: fmtDate(row.dueDate),
+      status,
+      purpose: row.purpose,
+      itemCount: items.length,
+    }
+  })
+
+  const details: Record<string, BorrowingDetail> = Object.fromEntries(
+    txRows.map((row) => [
+      row.id,
+      {
+        id: row.id,
+        code: row.code,
+        borrower: row.requesterName,
+        nim: row.requesterNim,
+        status: mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate }),
+        purpose: row.purpose,
+        requestedAt: fmtDate(row.requestedAt) ?? "-",
+        borrowDate: fmtDate(row.handedOverAt),
+        dueDate: fmtDate(row.dueDate),
+        labName: row.labName,
+        approvalsCount: approvalCountByTx.get(row.id) ?? 0,
+        items: itemMap.get(row.id) ?? [],
+        approvalHistory: approvalHistoryByTx.get(row.id) ?? [],
+        handoverHistory: handoverHistoryByTx.get(row.id) ?? [],
+        returnEvents: returnEventsByTx.get(row.id) ?? [],
+      } satisfies BorrowingDetail,
+    ]),
+  )
+
+  // For later usage (currently not shown, but useful if needed)
+  void returnCountByTx
+
+  return { rows, details, accessibleLabIds }
+}
+
+async function getCreateOptions(role: Role, userId: string, accessibleLabIds: string[] | null) {
+  const [labRows, requesterRows, toolRows, consumableRows] = await Promise.all([
+    db
+      .select({ id: labs.id, name: labs.name })
+      .from(labs)
+      .where(
+        role === "petugas_plp" && accessibleLabIds
+          ? accessibleLabIds.length > 0
+            ? inArray(labs.id, accessibleLabIds)
+            : sql`false`
+          : undefined,
+      )
+      .orderBy(asc(labs.name)),
+    role === "mahasiswa"
+      ? db
+          .select({ id: users.id, fullName: users.fullName, nim: users.nim })
+          .from(users)
+          .where(eq(users.id, userId))
+      : db
+          .select({ id: users.id, fullName: users.fullName, nim: users.nim })
+          .from(users)
+          .where(and(eq(users.role, "mahasiswa"), eq(users.isActive, true)))
+          .orderBy(asc(users.fullName)),
+    db
+      .select({
+        id: toolAssets.id,
+        assetCode: toolAssets.assetCode,
+        toolName: toolModels.name,
+        labId: toolModels.labId,
+        labName: labs.name,
+      })
+      .from(toolAssets)
+      .innerJoin(toolModels, eq(toolModels.id, toolAssets.toolModelId))
+      .innerJoin(labs, eq(labs.id, toolModels.labId))
+      .where(
+        and(
+          eq(toolAssets.status, "available"),
+          role === "petugas_plp" && accessibleLabIds
+            ? accessibleLabIds.length > 0
+              ? inArray(toolModels.labId, accessibleLabIds)
+              : sql`false`
+            : undefined,
+        ),
+      )
+      .orderBy(asc(labs.name), asc(toolModels.name), asc(toolAssets.assetCode)),
+    db
+      .select({
+        id: consumableItems.id,
+        name: consumableItems.name,
+        code: consumableItems.code,
+        labId: consumableItems.labId,
+        labName: labs.name,
+        stockQty: consumableItems.stockQty,
+        unit: consumableItems.unit,
+      })
+      .from(consumableItems)
+      .innerJoin(labs, eq(labs.id, consumableItems.labId))
+      .where(
+        role === "petugas_plp" && accessibleLabIds
+          ? accessibleLabIds.length > 0
+            ? inArray(consumableItems.labId, accessibleLabIds)
+            : sql`false`
+          : undefined,
+      )
+      .orderBy(asc(labs.name), asc(consumableItems.name)),
+  ])
+
+  const labsOptions: BorrowingCreateLabOption[] = labRows.map((row) => ({ id: row.id, name: row.name }))
+  const requesterOptions: BorrowingCreateRequesterOption[] = requesterRows.map((row) => ({
+    id: row.id,
+    label: row.nim ? `${row.fullName} (${row.nim})` : row.fullName,
+  }))
+  const toolOptions: BorrowingCreateToolOption[] = toolRows.map((row) => ({
+    id: row.id,
+    labId: row.labId,
+    label: `${row.toolName} - ${row.assetCode} - ${row.labName}`,
+  }))
+  const consumableOptions: BorrowingCreateConsumableOption[] = consumableRows.map((row) => ({
+    id: row.id,
+    labId: row.labId,
+    label: `${row.name} - ${row.labName} (stok ${row.stockQty} ${row.unit})`,
+    stockQty: row.stockQty,
+    unit: row.unit,
+  }))
+
+  return { labsOptions, requesterOptions, toolOptions, consumableOptions }
+}
+
+export default async function BorrowingPage() {
+  const session = await getServerAuthSession()
+  if (!session?.user?.id || !session.user.role) {
+    redirect("/")
+  }
+
+  const role = session.user.role as Role
+  const currentUserId = session.user.id
+
+  const { rows, details, accessibleLabIds } = await getBorrowingData(role, currentUserId)
+  const options = await getCreateOptions(role, currentUserId, accessibleLabIds)
 
   return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
-      {/* Summary Cards */}
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        <Card className="border-border/50 bg-card shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-warning/10">
-              <Clock className="size-4 text-warning-foreground" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Pending</p>
-              <p className="text-lg font-bold text-card-foreground">{borrowings.filter(b => b.status === "pending").length}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-              <Package className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Aktif</p>
-              <p className="text-lg font-bold text-card-foreground">{borrowings.filter(b => b.status === "active").length}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-destructive/10">
-              <XCircle className="size-4 text-destructive" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Terlambat</p>
-              <p className="text-lg font-bold text-card-foreground">{borrowings.filter(b => b.status === "overdue").length}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
-            <div className="flex size-10 items-center justify-center rounded-lg bg-success/10">
-              <CheckCircle2 className="size-4 text-success-foreground" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Dikembalikan</p>
-              <p className="text-lg font-bold text-card-foreground">{borrowings.filter(b => b.status === "returned").length}</p>
-            </div>
-          </CardContent>
-        </Card>
-      </div>
-
-      {/* Filter */}
-      <div className="flex items-center gap-3">
-        <Select value={statusFilter} onValueChange={setStatusFilter}>
-          <SelectTrigger className="w-48 bg-card">
-            <SelectValue placeholder="Filter Status" />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="all">Semua Status</SelectItem>
-            <SelectItem value="pending">Menunggu</SelectItem>
-            <SelectItem value="active">Aktif</SelectItem>
-            <SelectItem value="overdue">Terlambat</SelectItem>
-            <SelectItem value="returned">Dikembalikan</SelectItem>
-          </SelectContent>
-        </Select>
-      </div>
-
-      {/* Borrowing Table */}
-      <Card className="border-border/50 bg-card shadow-sm">
-        <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold text-card-foreground">
-            Daftar Peminjaman ({filtered.length})
-          </CardTitle>
-        </CardHeader>
-        <CardContent className="px-0">
-          <div className="overflow-x-auto">
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead className="font-semibold">ID</TableHead>
-                  <TableHead className="font-semibold">Peminjam</TableHead>
-                  <TableHead className="font-semibold">NIM</TableHead>
-                  <TableHead className="font-semibold">Tgl Pinjam</TableHead>
-                  <TableHead className="font-semibold">Tgl Kembali</TableHead>
-                  <TableHead className="font-semibold">Status</TableHead>
-                  <TableHead className="font-semibold">Keperluan</TableHead>
-                  <TableHead className="text-right font-semibold">Aksi</TableHead>
-                </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filtered.map((borrow) => {
-                  const status = statusConfig[borrow.status]
-                  return (
-                    <TableRow key={borrow.id} className="hover:bg-muted/30">
-                      <TableCell className="font-mono text-xs text-muted-foreground">{borrow.id}</TableCell>
-                      <TableCell className="font-medium text-foreground">{borrow.borrower}</TableCell>
-                      <TableCell className="font-mono text-xs text-muted-foreground">{borrow.nim}</TableCell>
-                      <TableCell className="text-muted-foreground">{borrow.borrowDate}</TableCell>
-                      <TableCell className="text-muted-foreground">{borrow.dueDate}</TableCell>
-                      <TableCell>
-                        <Badge variant="outline" className={status.className}>
-                          {status.label}
-                        </Badge>
-                      </TableCell>
-                      <TableCell className="text-muted-foreground max-w-[150px] truncate">{borrow.purpose}</TableCell>
-                      <TableCell>
-                        <div className="flex items-center justify-end gap-1">
-                          <Button
-                            variant="ghost"
-                            size="icon"
-                            className="size-8"
-                            onClick={() => setSelectedBorrowing(borrow)}
-                            aria-label="Lihat detail"
-                          >
-                            <Eye className="size-4" />
-                          </Button>
-                          {borrow.status === "pending" && (
-                            <>
-                              <Button variant="ghost" size="icon" className="size-8 text-success-foreground hover:text-success-foreground" aria-label="Setujui">
-                                <CheckCircle2 className="size-4" />
-                              </Button>
-                              <Button variant="ghost" size="icon" className="size-8 text-destructive hover:text-destructive" aria-label="Tolak">
-                                <XCircle className="size-4" />
-                              </Button>
-                            </>
-                          )}
-                        </div>
-                      </TableCell>
-                    </TableRow>
-                  )
-                })}
-              </TableBody>
-            </Table>
-          </div>
-        </CardContent>
-      </Card>
-
-      {/* Detail Dialog */}
-      <Dialog open={!!selectedBorrowing} onOpenChange={() => setSelectedBorrowing(null)}>
-        <DialogContent className="max-w-lg">
-          <DialogHeader>
-            <DialogTitle>Detail Peminjaman {selectedBorrowing?.id}</DialogTitle>
-            <DialogDescription>Informasi lengkap peminjaman alat laboratorium.</DialogDescription>
-          </DialogHeader>
-          {selectedBorrowing && (
-            <div className="flex flex-col gap-4">
-              <div className="grid grid-cols-2 gap-4 text-sm">
-                <div>
-                  <p className="text-muted-foreground">Peminjam</p>
-                  <p className="font-medium text-foreground">{selectedBorrowing.borrower}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">NIM</p>
-                  <p className="font-mono text-foreground">{selectedBorrowing.nim}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Tanggal Pinjam</p>
-                  <p className="text-foreground">{selectedBorrowing.borrowDate}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Batas Kembali</p>
-                  <p className="text-foreground">{selectedBorrowing.dueDate}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Keperluan</p>
-                  <p className="text-foreground">{selectedBorrowing.purpose}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Disetujui Oleh</p>
-                  <p className="text-foreground">{selectedBorrowing.approvedBy || "-"}</p>
-                </div>
-              </div>
-              <Separator />
-              <div>
-                <p className="mb-2 text-sm font-medium text-foreground">Daftar Alat</p>
-                <div className="flex flex-col gap-2">
-                  {selectedBorrowing.items.map((item, idx) => (
-                    <div key={idx} className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/50 px-3 py-2">
-                      <span className="text-sm text-foreground">{item.tool}</span>
-                      <Badge variant="secondary">{item.qty}x</Badge>
-                    </div>
-                  ))}
-                </div>
-              </div>
-              {selectedBorrowing.status === "pending" && (
-                <>
-                  <Separator />
-                  <div className="flex gap-2">
-                    <Button className="flex-1">
-                      <CheckCircle2 className="size-4" />
-                      Setujui
-                    </Button>
-                    <Button variant="destructive" className="flex-1">
-                      <XCircle className="size-4" />
-                      Tolak
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          )}
-        </DialogContent>
-      </Dialog>
-    </div>
+    <BorrowingPageClient
+      role={role}
+      currentUserId={currentUserId}
+      accessibleLabIds={accessibleLabIds}
+      rows={rows}
+      details={details}
+      createOptions={{
+        labs: options.labsOptions,
+        requesters: options.requesterOptions,
+        tools: options.toolOptions,
+        consumables: options.consumableOptions,
+      }}
+    />
   )
 }
+
