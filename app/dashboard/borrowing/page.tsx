@@ -94,6 +94,11 @@ async function getBorrowingData(role: Role, userId: string) {
       requesterUserId: borrowingTransactions.requesterUserId,
       createdByUserId: borrowingTransactions.createdByUserId,
       purpose: borrowingTransactions.purpose,
+      courseName: borrowingTransactions.courseName,
+      materialTopic: borrowingTransactions.materialTopic,
+      semesterLabel: borrowingTransactions.semesterLabel,
+      groupName: borrowingTransactions.groupName,
+      advisorLecturerName: borrowingTransactions.advisorLecturerName,
       status: borrowingTransactions.status,
       requesterName: users.fullName,
       requesterNim: users.nim,
@@ -309,6 +314,11 @@ async function getBorrowingData(role: Role, userId: string) {
       dueDate: fmtDate(row.dueDate),
       status,
       purpose: row.purpose,
+      courseName: row.courseName,
+      materialTopic: row.materialTopic,
+      semesterLabel: row.semesterLabel,
+      groupName: row.groupName,
+      advisorLecturerName: row.advisorLecturerName,
       itemCount: items.length,
     }
   })
@@ -323,6 +333,11 @@ async function getBorrowingData(role: Role, userId: string) {
         nim: row.requesterNim,
         status: mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate }),
         purpose: row.purpose,
+        courseName: row.courseName,
+        materialTopic: row.materialTopic,
+        semesterLabel: row.semesterLabel,
+        groupName: row.groupName,
+        advisorLecturerName: row.advisorLecturerName,
         requestedAt: fmtDate(row.requestedAt) ?? "-",
         borrowDate: fmtDate(row.handedOverAt),
         dueDate: fmtDate(row.dueDate),
@@ -368,6 +383,8 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
     db
       .select({
         id: toolAssets.id,
+        modelId: toolModels.id,
+        modelCode: toolModels.code,
         assetCode: toolAssets.assetCode,
         toolName: toolModels.name,
         labId: toolModels.labId,
@@ -416,6 +433,8 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
   }))
   const toolOptions: BorrowingCreateToolOption[] = toolRows.map((row) => ({
     id: row.id,
+    modelId: row.modelId,
+    modelCode: row.modelCode,
     labId: row.labId,
     label: `${row.toolName} - ${row.assetCode} - ${row.labName}`,
   }))
@@ -430,7 +449,11 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
   return { labsOptions, requesterOptions, toolOptions, consumableOptions }
 }
 
-export default async function BorrowingPage() {
+export default async function BorrowingPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) {
     redirect("/")
@@ -441,6 +464,12 @@ export default async function BorrowingPage() {
 
   const { rows, details, accessibleLabIds } = await getBorrowingData(role, currentUserId)
   const options = await getCreateOptions(role, currentUserId, accessibleLabIds)
+  const sp = (await searchParams) ?? {}
+  const prefill = {
+    openCreate: sp.openCreate === "1",
+    labId: typeof sp.labId === "string" ? sp.labId : undefined,
+    toolModelCode: typeof sp.toolModelCode === "string" ? sp.toolModelCode : undefined,
+  }
 
   return (
     <BorrowingPageClient
@@ -455,6 +484,7 @@ export default async function BorrowingPage() {
         tools: options.toolOptions,
         consumables: options.consumableOptions,
       }}
+      prefill={prefill}
     />
   )
 }

@@ -15,17 +15,24 @@ import {
   borrowingTransactionItems,
   borrowingTransactions,
   consumableItems,
+  consumableStockMovements,
   labs,
   toolAssets,
   toolModels,
   userLabAssignments,
   users,
 } from "@/lib/db/schema"
+import { writeSecurityAuditLog } from "@/lib/security/audit"
 
 const createBorrowingRequestSchema = z.object({
   labId: z.string().uuid(),
   requesterUserId: z.string().uuid(),
   purpose: z.string().min(5, "Keperluan minimal 5 karakter"),
+  courseName: z.string().trim().min(2, "Mata kuliah wajib diisi").max(200),
+  materialTopic: z.string().trim().min(2, "Materi wajib diisi").max(200),
+  semesterLabel: z.string().trim().min(1, "Semester wajib diisi").max(50),
+  groupName: z.string().trim().min(1, "Kelompok wajib diisi").max(50),
+  advisorLecturerName: z.string().trim().max(200).optional(),
   itemsPayload: z.string().optional(),
   toolAssetId: z.string().uuid().optional().or(z.literal("")),
   consumableItemId: z.string().uuid().optional().or(z.literal("")),
@@ -94,6 +101,11 @@ export async function createBorrowingRequestAction(
     labId: formData.get("labId"),
     requesterUserId: formData.get("requesterUserId"),
     purpose: formData.get("purpose"),
+    courseName: formData.get("courseName"),
+    materialTopic: formData.get("materialTopic"),
+    semesterLabel: formData.get("semesterLabel"),
+    groupName: formData.get("groupName"),
+    advisorLecturerName: formData.get("advisorLecturerName")?.toString() || undefined,
     itemsPayload: formData.get("itemsPayload")?.toString() || undefined,
     toolAssetId: formData.get("toolAssetId"),
     consumableItemId: formData.get("consumableItemId"),
@@ -218,6 +230,11 @@ export async function createBorrowingRequestAction(
           requesterUserId,
           createdByUserId: actorUserId,
           purpose: parsed.data.purpose.trim(),
+          courseName: parsed.data.courseName.trim(),
+          materialTopic: parsed.data.materialTopic.trim(),
+          semesterLabel: parsed.data.semesterLabel.trim(),
+          groupName: parsed.data.groupName.trim(),
+          advisorLecturerName: parsed.data.advisorLecturerName?.trim() || null,
           status: "pending_approval",
         })
         .returning({ id: borrowingTransactions.id })
@@ -259,6 +276,21 @@ export async function createBorrowingRequestAction(
         : "Gagal menyimpan pengajuan peminjaman.",
     }
   }
+
+  await writeSecurityAuditLog({
+    category: "borrowing",
+    action: "create_request",
+    outcome: "success",
+    userId: actorUserId,
+    actorRole: role,
+    targetType: "lab",
+    targetId: labId,
+    metadata: {
+      requesterUserId,
+      toolCount: toolAssetIds.length,
+      consumableCount: consumableSelections.length,
+    },
+  })
 
   revalidatePath("/dashboard/borrowing")
   revalidatePath("/dashboard")
@@ -366,6 +398,16 @@ export async function approveBorrowingWithFeedbackAction(
   } catch (error) {
     // duplicate approver on same transaction will be blocked by unique index
     console.error("approveBorrowingAction error:", error)
+    await writeSecurityAuditLog({
+      category: "borrowing",
+      action: "approve",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role,
+      targetType: "borrowing_transaction",
+      targetId: txRow.id,
+      metadata: { message: error instanceof Error ? error.message : "unknown_error" },
+    })
     const message =
       error instanceof Error &&
       (error.message.includes("borrowing_approvals_tx_approver_uq") || error.message.includes("duplicate"))
@@ -373,6 +415,16 @@ export async function approveBorrowingWithFeedbackAction(
         : "Approval gagal diproses."
     return { ok: false, message }
   }
+
+  await writeSecurityAuditLog({
+    category: "borrowing",
+    action: "approve",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role,
+    targetType: "borrowing_transaction",
+    targetId: txRow.id,
+  })
 
   revalidatePath("/dashboard/borrowing")
   revalidatePath("/dashboard")
@@ -417,6 +469,16 @@ export async function rejectBorrowingWithFeedbackAction(
     })
   } catch (error) {
     console.error("rejectBorrowingAction error:", error)
+    await writeSecurityAuditLog({
+      category: "borrowing",
+      action: "reject",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role,
+      targetType: "borrowing_transaction",
+      targetId: txRow.id,
+      metadata: { message: error instanceof Error ? error.message : "unknown_error" },
+    })
     const message =
       error instanceof Error &&
       (error.message.includes("borrowing_approvals_tx_approver_uq") || error.message.includes("duplicate"))
@@ -424,6 +486,16 @@ export async function rejectBorrowingWithFeedbackAction(
         : "Penolakan gagal diproses."
     return { ok: false, message }
   }
+
+  await writeSecurityAuditLog({
+    category: "borrowing",
+    action: "reject",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role,
+    targetType: "borrowing_transaction",
+    targetId: txRow.id,
+  })
 
   revalidatePath("/dashboard/borrowing")
   revalidatePath("/dashboard")
@@ -575,6 +647,12 @@ export async function handoverBorrowingAction(
       }
 
       for (const line of consumableLines) {
+        const stockRow = await tx.query.consumableItems.findFirst({
+          where: eq(consumableItems.id, line.consumableItemId!),
+          columns: { stockQty: true },
+        })
+        const beforeStock = stockRow?.stockQty ?? 0
+        const afterStock = beforeStock - line.qtyRequested
         await tx
           .update(consumableItems)
           .set({
@@ -588,6 +666,18 @@ export async function handoverBorrowingAction(
           transactionItemId: line.id,
           consumableItemId: line.consumableItemId!,
           qtyIssued: line.qtyRequested,
+        })
+
+        await tx.insert(consumableStockMovements).values({
+          consumableItemId: line.consumableItemId!,
+          movementType: "borrowing_handover_issue",
+          qtyDelta: -line.qtyRequested,
+          qtyBefore: beforeStock,
+          qtyAfter: afterStock,
+          note: parsed.data.note?.trim() || "Pengeluaran bahan saat serah terima peminjaman",
+          referenceType: "borrowing_transaction",
+          referenceId: txRow.id,
+          actorUserId: session.user.id,
         })
       }
 
@@ -603,6 +693,16 @@ export async function handoverBorrowingAction(
     })
   } catch (error) {
     console.error("handoverBorrowingAction error:", error)
+    await writeSecurityAuditLog({
+      category: "borrowing",
+      action: "handover",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role,
+      targetType: "borrowing_transaction",
+      targetId: txRow.id,
+      metadata: { message: error instanceof Error ? error.message : "unknown_error" },
+    })
     return {
       ok: false,
       message:
@@ -611,6 +711,16 @@ export async function handoverBorrowingAction(
           : "Serah terima gagal diproses.",
     }
   }
+
+  await writeSecurityAuditLog({
+    category: "borrowing",
+    action: "handover",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role,
+    targetType: "borrowing_transaction",
+    targetId: txRow.id,
+  })
 
   revalidatePath("/dashboard/borrowing")
   revalidatePath("/dashboard")
@@ -762,12 +872,32 @@ export async function returnBorrowingToolAction(
     })
   } catch (error) {
     console.error("returnBorrowingToolAction error:", error)
+    await writeSecurityAuditLog({
+      category: "borrowing",
+      action: "return_tool",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role,
+      targetType: "borrowing_transaction",
+      targetId: txRow.id,
+      metadata: { message: error instanceof Error ? error.message : "unknown_error" },
+    })
     return {
       ok: false,
       message:
         error instanceof Error && error.message ? error.message : "Pengembalian gagal diproses.",
     }
   }
+
+  await writeSecurityAuditLog({
+    category: "borrowing",
+    action: "return_tool",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role,
+    targetType: "borrowing_transaction",
+    targetId: txRow.id,
+  })
 
   revalidatePath("/dashboard/borrowing")
   revalidatePath("/dashboard")

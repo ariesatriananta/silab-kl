@@ -10,9 +10,11 @@ import {
   deactivateConsumableMasterAction,
   fulfillMaterialRequestWithFeedbackAction,
   rejectMaterialRequestWithFeedbackAction,
+  stockInConsumableAction,
   updateConsumableMasterAction,
   type ConsumableMasterActionResult,
   type MaterialRequestActionResult,
+  type ConsumableStockInActionResult,
 } from "@/app/dashboard/consumables/actions"
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -88,6 +90,23 @@ export type ConsumableCreateItemOption = {
   unit: string
 }
 
+export type ConsumableStockMovementRow = {
+  id: string
+  consumableId: string
+  consumableName: string
+  unit: string
+  labId: string
+  labName: string
+  movementType: "stock_in" | "material_request_fulfill" | "borrowing_handover_issue" | "manual_adjustment"
+  qtyDelta: number
+  qtyBefore: number
+  qtyAfter: number
+  note: string | null
+  referenceType: string | null
+  actorName: string
+  createdAt: string
+}
+
 const requestStatusConfig: Record<MaterialRequestRow["status"], { label: string; className: string }> = {
   pending: { label: "Menunggu", className: "bg-warning/10 text-warning-foreground border-warning/20" },
   approved: { label: "Disetujui", className: "bg-primary/10 text-primary border-primary/20" },
@@ -101,6 +120,7 @@ export function ConsumablesPageClient({
   currentUserId,
   consumables,
   materialRequests,
+  stockMovements,
   masterLabs,
   createOptions,
 }: {
@@ -108,6 +128,7 @@ export function ConsumablesPageClient({
   currentUserId: string
   consumables: ConsumableStockRow[]
   materialRequests: MaterialRequestRow[]
+  stockMovements: ConsumableStockMovementRow[]
   masterLabs: ConsumableCreateLabOption[]
   createOptions: {
     labs: ConsumableCreateLabOption[]
@@ -118,6 +139,7 @@ export function ConsumablesPageClient({
   const [createMasterOpen, setCreateMasterOpen] = useState(false)
   const [editingConsumable, setEditingConsumable] = useState<ConsumableStockRow | null>(null)
   const [deactivatingConsumable, setDeactivatingConsumable] = useState<ConsumableStockRow | null>(null)
+  const [stockInConsumable, setStockInConsumable] = useState<ConsumableStockRow | null>(null)
   const [selectedLabId, setSelectedLabId] = useState(createOptions.labs[0]?.id ?? "")
   const [qtyMap, setQtyMap] = useState<Record<string, number>>({})
   const [requestNote, setRequestNote] = useState("")
@@ -125,6 +147,8 @@ export function ConsumablesPageClient({
   const [processingRequest, setProcessingRequest] = useState<MaterialRequestRow | null>(null)
   const [processActionType, setProcessActionType] = useState<"approve" | "reject" | "fulfill">("approve")
   const [processNote, setProcessNote] = useState("")
+  const [stockInNote, setStockInNote] = useState("")
+  const [stockInSource, setStockInSource] = useState("")
 
   const [createState, createAction, createPending] = useActionState(
     createMaterialRequestAction,
@@ -141,6 +165,10 @@ export function ConsumablesPageClient({
   const [deactivateMasterState, deactivateMasterAction, deactivateMasterPending] = useActionState(
     deactivateConsumableMasterAction,
     null as ConsumableMasterActionResult | null,
+  )
+  const [stockInState, stockInAction, stockInPending] = useActionState(
+    stockInConsumableAction,
+    null as ConsumableStockInActionResult | null,
   )
   const [approveState, approveAction, approvePending] = useActionState(
     approveMaterialRequestWithFeedbackAction,
@@ -183,6 +211,7 @@ export function ConsumablesPageClient({
       createMasterState ? { key: `master-create:${createMasterState.ok}:${createMasterState.message}`, title: "Master Bahan", ...createMasterState } : null,
       updateMasterState ? { key: `master-update:${updateMasterState.ok}:${updateMasterState.message}`, title: "Master Bahan", ...updateMasterState } : null,
       deactivateMasterState ? { key: `master-deactivate:${deactivateMasterState.ok}:${deactivateMasterState.message}`, title: "Master Bahan", ...deactivateMasterState } : null,
+      stockInState ? { key: `stock-in:${stockInState.ok}:${stockInState.message}`, title: "Stok Masuk", ...stockInState } : null,
     ].filter(Boolean) as Array<{ key: string; title: string; ok: boolean; message: string }>
     for (const s of states) {
       if (toastKeys.current.includes(s.key)) continue
@@ -193,7 +222,7 @@ export function ConsumablesPageClient({
         variant: s.ok ? "default" : "destructive",
       })
     }
-  }, [approveState, createMasterState, createState, deactivateMasterState, fulfillState, rejectState, toast, updateMasterState])
+  }, [approveState, createMasterState, createState, deactivateMasterState, fulfillState, rejectState, stockInState, toast, updateMasterState])
 
   useEffect(() => {
     if (createState?.ok) {
@@ -225,6 +254,16 @@ export function ConsumablesPageClient({
       })
     }
   }, [deactivateMasterState])
+
+  useEffect(() => {
+    if (stockInState?.ok) {
+      queueMicrotask(() => {
+        setStockInConsumable(null)
+        setStockInNote("")
+        setStockInSource("")
+      })
+    }
+  }, [stockInState])
 
   useEffect(() => {
     const activeResult =
@@ -423,6 +462,7 @@ export function ConsumablesPageClient({
         <TabsList className="w-fit">
           <TabsTrigger value="stock">Stok Bahan</TabsTrigger>
           <TabsTrigger value="requests">Permintaan</TabsTrigger>
+          <TabsTrigger value="movements">Histori Stok</TabsTrigger>
         </TabsList>
 
         <TabsContent value="stock" className="mt-0 flex flex-col gap-4">
@@ -462,6 +502,9 @@ export function ConsumablesPageClient({
                     <p className="text-xs text-muted-foreground">Kode: {item.code}</p>
                     {canProcess && (
                       <div className="flex justify-end gap-2">
+                        <Button variant="secondary" size="sm" onClick={() => setStockInConsumable(item)}>
+                          Stok Masuk
+                        </Button>
                         <Button variant="outline" size="sm" onClick={() => setEditingConsumable(item)}>
                           Edit Bahan
                         </Button>
@@ -558,6 +601,62 @@ export function ConsumablesPageClient({
                         </TableRow>
                       )
                     })}
+                  </TableBody>
+                </Table>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="movements" className="mt-0">
+          <Card className="border-border/50 bg-card shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold text-card-foreground">Histori Pergerakan Stok</CardTitle>
+            </CardHeader>
+            <CardContent className="px-0">
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow className="bg-muted/50">
+                      <TableHead>Waktu</TableHead>
+                      <TableHead>Bahan</TableHead>
+                      <TableHead>Lab</TableHead>
+                      <TableHead>Tipe</TableHead>
+                      <TableHead className="text-right">Delta</TableHead>
+                      <TableHead className="text-right">Sebelum</TableHead>
+                      <TableHead className="text-right">Sesudah</TableHead>
+                      <TableHead>Petugas</TableHead>
+                    </TableRow>
+                  </TableHeader>
+                  <TableBody>
+                    {stockMovements.length === 0 && (
+                      <TableRow>
+                        <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
+                          Belum ada histori pergerakan stok.
+                        </TableCell>
+                      </TableRow>
+                    )}
+                    {stockMovements.map((m) => (
+                      <TableRow key={m.id} className="hover:bg-muted/30">
+                        <TableCell className="text-xs text-muted-foreground">
+                          {new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(m.createdAt))}
+                        </TableCell>
+                        <TableCell>
+                          <div className="max-w-[260px]">
+                            <p className="text-sm text-foreground">{m.consumableName}</p>
+                            <p className="truncate text-xs text-muted-foreground">{m.note ?? "-"}</p>
+                          </div>
+                        </TableCell>
+                        <TableCell className="text-muted-foreground">{m.labName}</TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{m.movementType}</TableCell>
+                        <TableCell className={`text-right font-medium ${m.qtyDelta >= 0 ? "text-success-foreground" : "text-destructive"}`}>
+                          {m.qtyDelta >= 0 ? "+" : ""}{m.qtyDelta} {m.unit}
+                        </TableCell>
+                        <TableCell className="text-right text-muted-foreground">{m.qtyBefore}</TableCell>
+                        <TableCell className="text-right text-muted-foreground">{m.qtyAfter}</TableCell>
+                        <TableCell className="text-muted-foreground">{m.actorName}</TableCell>
+                      </TableRow>
+                    ))}
                   </TableBody>
                 </Table>
               </div>
@@ -834,6 +933,65 @@ export function ConsumablesPageClient({
               </Button>
               <Button type="submit" variant="destructive" disabled={deactivateMasterPending || !deactivatingConsumable}>
                 {deactivateMasterPending ? "Memproses..." : "Nonaktifkan"}
+              </Button>
+            </div>
+          </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!stockInConsumable} onOpenChange={(open) => !open && setStockInConsumable(null)}>
+        <DialogContent className="max-w-lg">
+          <DialogHeader>
+            <DialogTitle>Catat Stok Masuk</DialogTitle>
+            <DialogDescription>
+              {stockInConsumable
+                ? `Tambahkan stok untuk ${stockInConsumable.name} (${stockInConsumable.lab})`
+                : "Form stok masuk bahan"}
+            </DialogDescription>
+          </DialogHeader>
+          <form action={stockInAction} className="grid gap-3">
+            {stockInState && (
+              <div className={`rounded-lg border px-3 py-2 text-sm ${stockInState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                {stockInState.message}
+              </div>
+            )}
+            <input type="hidden" name="consumableId" value={stockInConsumable?.id ?? ""} />
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="grid gap-2">
+                <Label>Qty Masuk</Label>
+                <Input name="qtyIn" type="number" min={1} defaultValue={1} required />
+              </div>
+              <div className="grid gap-2">
+                <Label>Sumber (opsional)</Label>
+                <Input
+                  name="source"
+                  value={stockInSource}
+                  onChange={(e) => setStockInSource(e.target.value)}
+                  placeholder="Contoh: Pengadaan Semester Genap"
+                />
+              </div>
+            </div>
+            <div className="grid gap-2">
+              <Label>Catatan (opsional)</Label>
+              <Textarea
+                name="note"
+                value={stockInNote}
+                onChange={(e) => setStockInNote(e.target.value)}
+                maxLength={500}
+                placeholder="Contoh: penerimaan bahan praktik sesuai daftar"
+              />
+            </div>
+            {stockInConsumable && (
+              <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                Stok saat ini: {stockInConsumable.stock} {stockInConsumable.unit}
+              </div>
+            )}
+            <div className="flex justify-end gap-2">
+              <Button type="button" variant="outline" onClick={() => setStockInConsumable(null)}>
+                Batal
+              </Button>
+              <Button type="submit" disabled={stockInPending || !stockInConsumable}>
+                {stockInPending ? "Memproses..." : "Simpan Stok Masuk"}
               </Button>
             </div>
           </form>

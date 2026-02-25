@@ -65,7 +65,7 @@ export default function LoginPage() {
         <CardHeader className="flex flex-col items-center gap-4 pb-2 pt-8">
           <div className="flex flex-col items-center gap-3">
             <Image
-              src="/images/logo.jpeg"
+              src="/logo.png"
               alt="Logo Poltekkes Kemenkes Surabaya"
               width={180}
               height={60}
@@ -75,7 +75,7 @@ export default function LoginPage() {
             <div className="flex flex-col items-center gap-1">
               <h1 className="text-xl font-bold tracking-tight text-foreground">SILAB-KL</h1>
               <p className="text-sm text-muted-foreground text-center text-balance">
-                Sistem Informasi Laboratorium Klinik
+                Sistem Informasi Laboratorium Jurusan Kesehatan Lingkungan
               </p>
             </div>
           </div>

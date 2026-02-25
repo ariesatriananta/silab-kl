@@ -7,6 +7,7 @@ import { db } from "@/lib/db/client"
 import { users } from "@/lib/db/schema"
 import { eq } from "drizzle-orm"
 import { hashPassword, verifyPassword } from "@/lib/auth/password"
+import { writeSecurityAuditLog } from "@/lib/security/audit"
 
 export type ChangePasswordActionResult = {
   ok: boolean
@@ -37,13 +38,37 @@ export async function changeOwnPasswordAction(
     confirmPassword: formData.get("confirmPassword"),
   })
   if (!parsed.success) {
+    await writeSecurityAuditLog({
+      category: "auth",
+      action: "change_password",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role ?? null,
+      metadata: { reason: "validation_error" },
+    })
     return { ok: false, message: parsed.error.issues[0]?.message ?? "Data ganti password tidak valid." }
   }
 
   if (parsed.data.currentPassword === parsed.data.newPassword) {
+    await writeSecurityAuditLog({
+      category: "auth",
+      action: "change_password",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role ?? null,
+      metadata: { reason: "same_password" },
+    })
     return { ok: false, message: "Password baru harus berbeda dari password saat ini." }
   }
   if (parsed.data.newPassword === "password") {
+    await writeSecurityAuditLog({
+      category: "auth",
+      action: "change_password",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role ?? null,
+      metadata: { reason: "default_password_disallowed" },
+    })
     return { ok: false, message: "Password baru tidak boleh menggunakan password default." }
   }
 
@@ -51,10 +76,30 @@ export async function changeOwnPasswordAction(
     where: eq(users.id, session.user.id),
     columns: { id: true, passwordHash: true, isActive: true },
   })
-  if (!user || !user.isActive) return { ok: false, message: "Akun tidak ditemukan atau nonaktif." }
+  if (!user || !user.isActive) {
+    await writeSecurityAuditLog({
+      category: "auth",
+      action: "change_password",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role ?? null,
+      metadata: { reason: "user_not_active" },
+    })
+    return { ok: false, message: "Akun tidak ditemukan atau nonaktif." }
+  }
 
   const validCurrent = await verifyPassword(parsed.data.currentPassword, user.passwordHash)
-  if (!validCurrent) return { ok: false, message: "Password saat ini salah." }
+  if (!validCurrent) {
+    await writeSecurityAuditLog({
+      category: "auth",
+      action: "change_password",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role ?? null,
+      metadata: { reason: "invalid_current_password" },
+    })
+    return { ok: false, message: "Password saat ini salah." }
+  }
 
   const nextHash = await hashPassword(parsed.data.newPassword)
   await db
@@ -64,6 +109,14 @@ export async function changeOwnPasswordAction(
       updatedAt: new Date(),
     })
     .where(eq(users.id, user.id))
+
+  await writeSecurityAuditLog({
+    category: "auth",
+    action: "change_password",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role ?? null,
+  })
 
   return { ok: true, message: "Password berhasil diubah. Anda akan logout untuk login ulang." }
 }

@@ -5,6 +5,7 @@ import {
   ConsumablesPageClient,
   type ConsumableCreateLabOption,
   type ConsumableCreateItemOption,
+  type ConsumableStockMovementRow,
   type ConsumableStockRow,
   type MaterialRequestRow,
 } from "@/components/consumables/consumables-page-client"
@@ -12,6 +13,7 @@ import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
 import {
   consumableItems,
+  consumableStockMovements,
   labs,
   materialRequestItems,
   materialRequests,
@@ -49,7 +51,7 @@ async function getConsumablesData(role: Role, userId: string, accessibleLabIds: 
           ? inArray(materialRequests.labId, accessibleLabIds)
           : sql`false`
 
-  const [stockRows, requestRows, requestLineRows, labRows, createItemRows] = await Promise.all([
+  const [stockRows, requestRows, requestLineRows, labRows, createItemRows, movementRows] = await Promise.all([
     db
       .select({
         id: consumableItems.id,
@@ -127,6 +129,30 @@ async function getConsumablesData(role: Role, userId: string, accessibleLabIds: 
       .innerJoin(labs, eq(labs.id, consumableItems.labId))
       .where(and(eq(consumableItems.isActive, true), stockWhere))
       .orderBy(asc(labs.name), asc(consumableItems.name)),
+    db
+      .select({
+        id: consumableStockMovements.id,
+        consumableId: consumableStockMovements.consumableItemId,
+        movementType: consumableStockMovements.movementType,
+        qtyDelta: consumableStockMovements.qtyDelta,
+        qtyBefore: consumableStockMovements.qtyBefore,
+        qtyAfter: consumableStockMovements.qtyAfter,
+        note: consumableStockMovements.note,
+        referenceType: consumableStockMovements.referenceType,
+        createdAt: consumableStockMovements.createdAt,
+        actorName: users.fullName,
+        consumableName: consumableItems.name,
+        unit: consumableItems.unit,
+        labId: consumableItems.labId,
+        labName: labs.name,
+      })
+      .from(consumableStockMovements)
+      .innerJoin(consumableItems, eq(consumableItems.id, consumableStockMovements.consumableItemId))
+      .innerJoin(labs, eq(labs.id, consumableItems.labId))
+      .leftJoin(users, eq(users.id, consumableStockMovements.actorUserId))
+      .where(stockWhere)
+      .orderBy(desc(consumableStockMovements.createdAt))
+      .limit(100),
   ])
 
   const consumables: ConsumableStockRow[] = stockRows.map((row) => ({
@@ -177,7 +203,24 @@ async function getConsumablesData(role: Role, userId: string, accessibleLabIds: 
     unit: r.unit,
   }))
 
-  return { consumables, requests, createLabs, createItems }
+  const stockMovementRows: ConsumableStockMovementRow[] = movementRows.map((row) => ({
+    id: row.id,
+    consumableId: row.consumableId,
+    consumableName: row.consumableName,
+    unit: row.unit,
+    labId: row.labId,
+    labName: row.labName,
+    movementType: row.movementType,
+    qtyDelta: row.qtyDelta,
+    qtyBefore: row.qtyBefore,
+    qtyAfter: row.qtyAfter,
+    note: row.note,
+    referenceType: row.referenceType,
+    actorName: row.actorName ?? "-",
+    createdAt: row.createdAt.toISOString(),
+  }))
+
+  return { consumables, requests, createLabs, createItems, stockMovementRows }
 }
 
 export default async function ConsumablesPage() {
@@ -186,7 +229,7 @@ export default async function ConsumablesPage() {
 
   const role = session.user.role as Role
   const accessibleLabIds = await getAccessibleLabIds(role, session.user.id)
-  const { consumables, requests, createLabs, createItems } = await getConsumablesData(
+  const { consumables, requests, createLabs, createItems, stockMovementRows } = await getConsumablesData(
     role,
     session.user.id,
     accessibleLabIds,
@@ -198,6 +241,7 @@ export default async function ConsumablesPage() {
       currentUserId={session.user.id}
       consumables={consumables}
       materialRequests={requests}
+      stockMovements={stockMovementRows}
       masterLabs={createLabs}
       createOptions={{ labs: createLabs, items: createItems }}
     />

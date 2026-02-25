@@ -1,7 +1,8 @@
 "use client"
 
+import Link from "next/link"
 import { useActionState, useEffect, useMemo, useRef, useState } from "react"
-import { CheckCircle2, Clock, Eye, Package, Plus, XCircle } from "lucide-react"
+import { CheckCircle2, Clock, Eye, Package, Plus, Printer, XCircle } from "lucide-react"
 
 import {
   approveBorrowingAction,
@@ -105,6 +106,11 @@ export type BorrowingListRow = {
   dueDate: string | null
   status: DisplayStatus
   purpose: string
+  courseName: string
+  materialTopic: string
+  semesterLabel: string
+  groupName: string
+  advisorLecturerName: string | null
   itemCount: number
 }
 
@@ -115,6 +121,11 @@ export type BorrowingDetail = {
   nim: string | null
   status: DisplayStatus
   purpose: string
+  courseName: string
+  materialTopic: string
+  semesterLabel: string
+  groupName: string
+  advisorLecturerName: string | null
   requestedAt: string
   borrowDate: string | null
   dueDate: string | null
@@ -159,7 +170,7 @@ export type BorrowingDetail = {
 
 export type BorrowingCreateLabOption = { id: string; name: string }
 export type BorrowingCreateRequesterOption = { id: string; label: string }
-export type BorrowingCreateToolOption = { id: string; label: string; labId: string }
+export type BorrowingCreateToolOption = { id: string; label: string; labId: string; modelId: string; modelCode: string }
 export type BorrowingCreateConsumableOption = {
   id: string
   label: string
@@ -175,6 +186,7 @@ export function BorrowingPageClient({
   rows,
   details,
   createOptions,
+  prefill,
 }: {
   role: "admin" | "mahasiswa" | "petugas_plp"
   currentUserId: string
@@ -186,6 +198,11 @@ export function BorrowingPageClient({
     requesters: BorrowingCreateRequesterOption[]
     tools: BorrowingCreateToolOption[]
     consumables: BorrowingCreateConsumableOption[]
+  }
+  prefill?: {
+    openCreate?: boolean
+    labId?: string
+    toolModelCode?: string
   }
 }) {
   const [statusFilter, setStatusFilter] = useState("all")
@@ -200,6 +217,11 @@ export function BorrowingPageClient({
   )
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>([])
   const [consumableQtyMap, setConsumableQtyMap] = useState<Record<string, number>>({})
+  const [courseName, setCourseName] = useState("")
+  const [materialTopic, setMaterialTopic] = useState("")
+  const [semesterLabel, setSemesterLabel] = useState("")
+  const [groupName, setGroupName] = useState("")
+  const [advisorLecturerName, setAdvisorLecturerName] = useState("")
   const [approvalNote, setApprovalNote] = useState("")
   const [rejectNote, setRejectNote] = useState("")
   const [handoverNote, setHandoverNote] = useState("")
@@ -314,6 +336,41 @@ export function BorrowingPageClient({
       })
     }
   }, [approveState, createState, handoverState, rejectState, returnState, toast])
+
+  useEffect(() => {
+    if (!createState?.ok) return
+    queueMicrotask(() => {
+      setCreateOpen(false)
+      setSelectedToolIds([])
+      setConsumableQtyMap({})
+      setCourseName("")
+      setMaterialTopic("")
+      setSemesterLabel("")
+      setGroupName("")
+      setAdvisorLecturerName("")
+    })
+  }, [createState])
+
+  useEffect(() => {
+    if (!prefill?.openCreate) return
+    queueMicrotask(() => {
+      setCreateOpen(true)
+      if (prefill.labId && createOptions.labs.some((l) => l.id === prefill.labId)) {
+        setSelectedLabId(prefill.labId)
+      }
+      if (prefill.toolModelCode) {
+        const firstTool = createOptions.tools.find(
+          (t) =>
+            t.modelCode === prefill.toolModelCode &&
+            (!prefill.labId || t.labId === prefill.labId),
+        )
+        if (firstTool) {
+          if (!prefill.labId) setSelectedLabId(firstTool.labId)
+          setSelectedToolIds([firstTool.id])
+        }
+      }
+    })
+  }, [createOptions.labs, createOptions.tools, prefill])
 
   return (
     <div className="flex flex-col gap-6 p-4 lg:p-6">
@@ -431,6 +488,66 @@ export function BorrowingPageClient({
               <div className="grid gap-2">
                 <Label htmlFor="purpose">Keperluan</Label>
                 <Input id="purpose" name="purpose" placeholder="Contoh: Praktikum Hematologi" required />
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="courseName">Mata Kuliah</Label>
+                  <Input
+                    id="courseName"
+                    name="courseName"
+                    value={courseName}
+                    onChange={(e) => setCourseName(e.target.value)}
+                    placeholder="Contoh: Kimia Lingkungan"
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="materialTopic">Materi</Label>
+                  <Input
+                    id="materialTopic"
+                    name="materialTopic"
+                    value={materialTopic}
+                    onChange={(e) => setMaterialTopic(e.target.value)}
+                    placeholder="Contoh: Titrasi Asam Basa"
+                    required
+                  />
+                </div>
+              </div>
+
+              <div className="grid gap-3 sm:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="semesterLabel">Semester</Label>
+                  <Input
+                    id="semesterLabel"
+                    name="semesterLabel"
+                    value={semesterLabel}
+                    onChange={(e) => setSemesterLabel(e.target.value)}
+                    placeholder="Contoh: 4"
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="groupName">Kelompok</Label>
+                  <Input
+                    id="groupName"
+                    name="groupName"
+                    value={groupName}
+                    onChange={(e) => setGroupName(e.target.value)}
+                    placeholder="A / B / C"
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="advisorLecturerName">Dosen (opsional)</Label>
+                  <Input
+                    id="advisorLecturerName"
+                    name="advisorLecturerName"
+                    value={advisorLecturerName}
+                    onChange={(e) => setAdvisorLecturerName(e.target.value)}
+                    placeholder="Nama dosen"
+                  />
+                </div>
               </div>
 
               <Separator />
@@ -611,6 +728,14 @@ export function BorrowingPageClient({
           </DialogHeader>
           {selectedBorrowing && (
             <div className="flex flex-col gap-4">
+              <div className="flex justify-end">
+                <Button variant="outline" size="sm" asChild>
+                  <Link href={`/borrowing-proof/${selectedBorrowing.id}`} target="_blank" rel="noreferrer">
+                    <Printer className="size-4" />
+                    Cetak Bukti
+                  </Link>
+                </Button>
+              </div>
               <div className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
                 <div>
                   <p className="text-muted-foreground">Peminjam</p>
@@ -641,6 +766,26 @@ export function BorrowingPageClient({
                 <div className="sm:col-span-2">
                   <p className="text-muted-foreground">Keperluan</p>
                   <p className="text-foreground">{selectedBorrowing.purpose}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Mata Kuliah</p>
+                  <p className="text-foreground">{selectedBorrowing.courseName}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Materi</p>
+                  <p className="text-foreground">{selectedBorrowing.materialTopic}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Semester</p>
+                  <p className="text-foreground">{selectedBorrowing.semesterLabel}</p>
+                </div>
+                <div>
+                  <p className="text-muted-foreground">Kelompok</p>
+                  <p className="text-foreground">{selectedBorrowing.groupName}</p>
+                </div>
+                <div className="sm:col-span-2">
+                  <p className="text-muted-foreground">Dosen Pembimbing</p>
+                  <p className="text-foreground">{selectedBorrowing.advisorLecturerName ?? "-"}</p>
                 </div>
                 <div>
                   <p className="text-muted-foreground">Jumlah Approval</p>

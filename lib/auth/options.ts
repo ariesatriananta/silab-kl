@@ -12,6 +12,7 @@ import {
   isLoginRateLimited,
   recordLoginFailure,
 } from "@/lib/auth/login-rate-limit"
+import { writeSecurityAuditLog } from "@/lib/security/audit"
 
 type AppRole = "admin" | "mahasiswa" | "petugas_plp"
 
@@ -41,8 +42,15 @@ export const authOptions: NextAuthOptions = {
 
         const db = createDb()
         const identifier = parsed.data.identifier.trim()
-        const rateLimit = isLoginRateLimited(identifier)
+        const rateLimit = await isLoginRateLimited(identifier)
         if (rateLimit.limited) {
+          await writeSecurityAuditLog({
+            category: "auth",
+            action: "login",
+            outcome: "blocked",
+            identifier,
+            metadata: { reason: "rate_limited" },
+          })
           throw new Error("TooManyAttempts")
         }
 
@@ -62,17 +70,41 @@ export const authOptions: NextAuthOptions = {
         })
 
         if (!found) {
-          recordLoginFailure(identifier)
+          await recordLoginFailure(identifier)
+          await writeSecurityAuditLog({
+            category: "auth",
+            action: "login",
+            outcome: "failure",
+            identifier,
+            metadata: { reason: "user_not_found" },
+          })
           return null
         }
 
         const isValid = await verifyPassword(parsed.data.password, found.passwordHash)
         if (!isValid) {
-          recordLoginFailure(identifier)
+          await recordLoginFailure(identifier)
+          await writeSecurityAuditLog({
+            category: "auth",
+            action: "login",
+            outcome: "failure",
+            userId: found.id,
+            actorRole: found.role as AppRole,
+            identifier,
+            metadata: { reason: "invalid_password" },
+          })
           return null
         }
 
-        clearLoginFailures(identifier)
+        await clearLoginFailures(identifier)
+        await writeSecurityAuditLog({
+          category: "auth",
+          action: "login",
+          outcome: "success",
+          userId: found.id,
+          actorRole: found.role as AppRole,
+          identifier,
+        })
 
         // Transparent migration from legacy seed hash to bcrypt after successful login.
         if (isLegacySeedHash(found.passwordHash)) {
@@ -85,8 +117,24 @@ export const authOptions: NextAuthOptions = {
                 updatedAt: new Date(),
               })
               .where(eq(users.id, found.id))
+            await writeSecurityAuditLog({
+              category: "auth",
+              action: "password_hash_upgrade",
+              outcome: "success",
+              userId: found.id,
+              actorRole: found.role as AppRole,
+              identifier,
+            })
           } catch (error) {
             console.error("password hash upgrade failed:", error)
+            await writeSecurityAuditLog({
+              category: "auth",
+              action: "password_hash_upgrade",
+              outcome: "failure",
+              userId: found.id,
+              actorRole: found.role as AppRole,
+              identifier,
+            })
           }
         }
 

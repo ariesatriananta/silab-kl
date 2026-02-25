@@ -24,6 +24,14 @@ export const toolAssetStatusEnum = pgEnum("tool_asset_status", [
 ])
 
 export const toolConditionEnum = pgEnum("tool_condition", ["baik", "maintenance", "damaged"])
+export const toolAssetEventTypeEnum = pgEnum("tool_asset_event_type", [
+  "created",
+  "condition_update",
+  "maintenance_update",
+  "status_update",
+  "return_update",
+  "note_update",
+])
 
 export const borrowingStatusEnum = pgEnum("borrowing_status", [
   "submitted",
@@ -46,6 +54,12 @@ export const materialRequestStatusEnum = pgEnum("material_request_status", [
   "fulfilled",
   "rejected",
   "cancelled",
+])
+export const consumableStockMovementTypeEnum = pgEnum("consumable_stock_movement_type", [
+  "stock_in",
+  "material_request_fulfill",
+  "borrowing_handover_issue",
+  "manual_adjustment",
 ])
 
 // Master
@@ -104,6 +118,29 @@ export const userLabAssignments = pgTable(
   ],
 )
 
+export const securityAuditLogs = pgTable(
+  "security_audit_logs",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    category: varchar("category", { length: 50 }).notNull(),
+    action: varchar("action", { length: 100 }).notNull(),
+    outcome: varchar("outcome", { length: 20 }).notNull(),
+    userId: uuid("user_id").references(() => users.id, { onDelete: "set null" }),
+    targetType: varchar("target_type", { length: 50 }),
+    targetId: uuid("target_id"),
+    actorRole: userRoleEnum("actor_role"),
+    identifier: varchar("identifier", { length: 200 }),
+    metadataJson: text("metadata_json"),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("security_audit_logs_created_idx").on(t.createdAt),
+    index("security_audit_logs_category_idx").on(t.category),
+    index("security_audit_logs_user_idx").on(t.userId),
+    index("security_audit_logs_target_idx").on(t.targetType, t.targetId),
+  ],
+)
+
 export const toolModels = pgTable(
   "tool_models",
   {
@@ -113,7 +150,9 @@ export const toolModels = pgTable(
       .references(() => labs.id, { onDelete: "restrict" }),
     code: varchar("code", { length: 50 }).notNull(),
     name: varchar("name", { length: 200 }).notNull(),
+    brand: varchar("brand", { length: 100 }),
     category: varchar("category", { length: 100 }).notNull(),
+    locationDetail: varchar("location_detail", { length: 255 }),
     description: text("description"),
     imageUrl: text("image_url"),
     isActive: boolean("is_active").default(true).notNull(),
@@ -152,6 +191,29 @@ export const toolAssets = pgTable(
   ],
 )
 
+export const toolAssetEvents = pgTable(
+  "tool_asset_events",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    toolAssetId: uuid("tool_asset_id")
+      .notNull()
+      .references(() => toolAssets.id, { onDelete: "cascade" }),
+    eventType: toolAssetEventTypeEnum("event_type").notNull(),
+    conditionBefore: toolConditionEnum("condition_before"),
+    conditionAfter: toolConditionEnum("condition_after"),
+    statusBefore: toolAssetStatusEnum("status_before"),
+    statusAfter: toolAssetStatusEnum("status_after"),
+    note: text("note"),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("tool_asset_events_asset_idx").on(t.toolAssetId),
+    index("tool_asset_events_created_idx").on(t.createdAt),
+    index("tool_asset_events_actor_idx").on(t.actorUserId),
+  ],
+)
+
 export const consumableItems = pgTable(
   "consumable_items",
   {
@@ -175,6 +237,30 @@ export const consumableItems = pgTable(
   ],
 )
 
+export const consumableStockMovements = pgTable(
+  "consumable_stock_movements",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    consumableItemId: uuid("consumable_item_id")
+      .notNull()
+      .references(() => consumableItems.id, { onDelete: "restrict" }),
+    movementType: consumableStockMovementTypeEnum("movement_type").notNull(),
+    qtyDelta: integer("qty_delta").notNull(),
+    qtyBefore: integer("qty_before").notNull(),
+    qtyAfter: integer("qty_after").notNull(),
+    note: text("note"),
+    referenceType: varchar("reference_type", { length: 50 }),
+    referenceId: uuid("reference_id"),
+    actorUserId: uuid("actor_user_id").references(() => users.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("consumable_stock_movements_item_idx").on(t.consumableItemId),
+    index("consumable_stock_movements_created_idx").on(t.createdAt),
+    index("consumable_stock_movements_ref_idx").on(t.referenceType, t.referenceId),
+  ],
+)
+
 // Borrowing transaction
 export const borrowingTransactions = pgTable(
   "borrowing_transactions",
@@ -191,6 +277,11 @@ export const borrowingTransactions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     purpose: text("purpose").notNull(),
+    courseName: varchar("course_name", { length: 200 }).default("").notNull(),
+    materialTopic: varchar("material_topic", { length: 200 }).default("").notNull(),
+    semesterLabel: varchar("semester_label", { length: 50 }).default("").notNull(),
+    groupName: varchar("group_name", { length: 50 }).default("").notNull(),
+    advisorLecturerName: varchar("advisor_lecturer_name", { length: 200 }),
     status: borrowingStatusEnum("status").default("submitted").notNull(),
     requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
@@ -420,6 +511,23 @@ export const labUsageLogs = pgTable(
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
   },
   (t) => [index("lab_usage_logs_lab_idx").on(t.labId), index("lab_usage_logs_started_idx").on(t.startedAt)],
+)
+
+export const labUsageAttendances = pgTable(
+  "lab_usage_attendances",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    usageLogId: uuid("usage_log_id")
+      .notNull()
+      .references(() => labUsageLogs.id, { onDelete: "cascade" }),
+    attendeeName: varchar("attendee_name", { length: 200 }).notNull(),
+    attendeeNim: varchar("attendee_nim", { length: 50 }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    index("lab_usage_attendances_usage_idx").on(t.usageLogId),
+    index("lab_usage_attendances_nim_idx").on(t.attendeeNim),
+  ],
 )
 
 export type User = typeof users.$inferSelect

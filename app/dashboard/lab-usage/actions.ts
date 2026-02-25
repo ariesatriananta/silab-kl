@@ -6,7 +6,8 @@ import { z } from "zod"
 
 import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
-import { labSchedules, labUsageLogs, userLabAssignments } from "@/lib/db/schema"
+import { labSchedules, labUsageAttendances, labUsageLogs, userLabAssignments } from "@/lib/db/schema"
+import { writeSecurityAuditLog } from "@/lib/security/audit"
 
 type ActionResult = { ok: boolean; message: string }
 
@@ -40,7 +41,31 @@ const usageLogSchema = z.object({
   startTime: z.string().regex(/^\d{2}:\d{2}$/),
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
   note: z.string().max(500).optional(),
+  attendanceText: z.string().max(20000).optional(),
 })
+
+function parseAttendanceLines(text: string | undefined) {
+  if (!text?.trim()) return []
+  const lines = text
+    .split(/\r?\n/)
+    .map((line) => line.trim())
+    .filter(Boolean)
+
+  return lines.map((line) => {
+    const normalized = line.replace(/^\d+[.)]\s*/, "").trim()
+    const nimNameMatch = normalized.match(/^([A-Za-z0-9\/.-]{4,})\s*[-,:|]\s*(.+)$/)
+    if (nimNameMatch) {
+      return {
+        attendeeNim: nimNameMatch[1].trim(),
+        attendeeName: nimNameMatch[2].trim(),
+      }
+    }
+    return {
+      attendeeNim: null,
+      attendeeName: normalized,
+    }
+  })
+}
 
 function parseWibDateTime(date: string, time: string) {
   const value = new Date(`${date}T${time}:00+07:00`)
@@ -109,6 +134,16 @@ export async function createLabScheduleAction(
     createdByUserId: auth.session.user.id,
   })
 
+  await writeSecurityAuditLog({
+    category: "lab_usage",
+    action: "create_schedule",
+    outcome: "success",
+    userId: auth.session.user.id,
+    actorRole: auth.session.user.role,
+    targetType: "lab",
+    targetId: parsed.data.labId,
+  })
+
   revalidatePath("/dashboard/lab-usage")
   return { ok: true, message: "Jadwal lab berhasil ditambahkan." }
 }
@@ -172,6 +207,16 @@ export async function updateLabScheduleAction(
     })
     .where(eq(labSchedules.id, parsed.data.scheduleId))
 
+  await writeSecurityAuditLog({
+    category: "lab_usage",
+    action: "update_schedule",
+    outcome: "success",
+    userId: auth.session.user.id,
+    actorRole: auth.session.user.role,
+    targetType: "lab_schedule",
+    targetId: parsed.data.scheduleId,
+  })
+
   revalidatePath("/dashboard/lab-usage")
   return { ok: true, message: "Jadwal lab berhasil diperbarui." }
 }
@@ -202,6 +247,15 @@ export async function deleteLabScheduleWithFeedbackAction(
   if ("error" in auth) return { ok: false, message: auth.error ?? "Akses ditolak." }
 
   await db.delete(labSchedules).where(eq(labSchedules.id, parsed.data.scheduleId))
+  await writeSecurityAuditLog({
+    category: "lab_usage",
+    action: "delete_schedule",
+    outcome: "success",
+    userId: auth.session.user.id,
+    actorRole: auth.session.user.role,
+    targetType: "lab_schedule",
+    targetId: parsed.data.scheduleId,
+  })
   revalidatePath("/dashboard/lab-usage")
   return { ok: true, message: "Jadwal lab berhasil dihapus." }
 }
@@ -220,6 +274,7 @@ export async function createLabUsageLogAction(
     startTime: formData.get("startTime"),
     endTime: formData.get("endTime"),
     note: formData.get("note")?.toString() || undefined,
+    attendanceText: formData.get("attendanceText")?.toString() || undefined,
   })
   if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Data tidak valid." }
 
@@ -236,16 +291,49 @@ export async function createLabUsageLogAction(
   }
   if (endedAt <= startedAt) return { ok: false, message: "Jam selesai harus lebih besar dari jam mulai." }
 
-  await db.insert(labUsageLogs).values({
-    labId: parsed.data.labId,
-    scheduleId: !parsed.data.scheduleId || parsed.data.scheduleId === "none" ? null : parsed.data.scheduleId,
-    courseName: parsed.data.courseName.trim(),
-    groupName: parsed.data.groupName.trim(),
-    studentCount: parsed.data.studentCount,
-    startedAt,
-    endedAt,
-    createdByUserId: auth.session.user.id,
-    note: parsed.data.note?.trim() || null,
+  const attendanceRows = parseAttendanceLines(parsed.data.attendanceText)
+  if (attendanceRows.length > 0 && attendanceRows.length !== parsed.data.studentCount) {
+    return { ok: false, message: "Jumlah baris absensi harus sama dengan jumlah mahasiswa." }
+  }
+
+  await db.transaction(async (tx) => {
+    const [usage] = await tx
+      .insert(labUsageLogs)
+      .values({
+        labId: parsed.data.labId,
+        scheduleId: !parsed.data.scheduleId || parsed.data.scheduleId === "none" ? null : parsed.data.scheduleId,
+        courseName: parsed.data.courseName.trim(),
+        groupName: parsed.data.groupName.trim(),
+        studentCount: parsed.data.studentCount,
+        startedAt,
+        endedAt,
+        createdByUserId: auth.session.user.id,
+        note: parsed.data.note?.trim() || null,
+      })
+      .returning({ id: labUsageLogs.id })
+
+    if (!usage) throw new Error("Gagal menyimpan riwayat penggunaan lab.")
+
+    if (attendanceRows.length > 0) {
+      await tx.insert(labUsageAttendances).values(
+        attendanceRows.map((row) => ({
+          usageLogId: usage.id,
+          attendeeName: row.attendeeName,
+          attendeeNim: row.attendeeNim,
+        })),
+      )
+    }
+  })
+
+  await writeSecurityAuditLog({
+    category: "lab_usage",
+    action: "create_usage_log",
+    outcome: "success",
+    userId: auth.session.user.id,
+    actorRole: auth.session.user.role,
+    targetType: "lab",
+    targetId: parsed.data.labId,
+    metadata: { studentCount: parsed.data.studentCount, attendanceRows: attendanceRows.length },
   })
 
   revalidatePath("/dashboard/lab-usage")

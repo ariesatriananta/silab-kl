@@ -1,7 +1,7 @@
 "use client"
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react"
-import { CalendarDays, Clock, GraduationCap, Pencil, Plus, Trash2, Users } from "lucide-react"
+import { CalendarDays, Clock, Eye, GraduationCap, Pencil, Plus, Trash2, Users } from "lucide-react"
 
 import {
   createLabScheduleAction,
@@ -67,7 +67,12 @@ export type LabUsageHistoryRow = {
   startTime: string
   endTime: string
   durationLabel: string
+  attendance: Array<{
+    attendeeName: string
+    attendeeNim: string | null
+  }>
 }
+export type LabUsageAttendanceRow = LabUsageHistoryRow["attendance"][number]
 
 type Role = "admin" | "petugas_plp"
 
@@ -102,6 +107,8 @@ export function LabUsagePageClient({
   const [usageDate, setUsageDate] = useState(localDateInputValue())
   const [usageStartTime, setUsageStartTime] = useState("")
   const [usageEndTime, setUsageEndTime] = useState("")
+  const [usageAttendanceText, setUsageAttendanceText] = useState("")
+  const [selectedHistory, setSelectedHistory] = useState<LabUsageHistoryRow | null>(null)
 
   const [createScheduleState, createScheduleAction, createSchedulePending] = useActionState(
     createLabScheduleAction,
@@ -154,6 +161,15 @@ export function LabUsagePageClient({
       })
     }
   }, [createScheduleState, updateScheduleState, createUsageState, deleteScheduleState, toast])
+
+  useEffect(() => {
+    if (createUsageState?.ok) {
+      queueMicrotask(() => {
+        setCreateUsageOpen(false)
+        setUsageAttendanceText("")
+      })
+    }
+  }, [createUsageState])
 
   const handleUsageLabChange = (labId: string) => {
     setUsageLabId(labId)
@@ -382,6 +398,21 @@ export function LabUsagePageClient({
                 <Label htmlFor="usageNote">Catatan (opsional)</Label>
                 <Textarea id="usageNote" name="note" maxLength={500} />
               </div>
+              <div className="grid gap-2">
+                <Label htmlFor="usageAttendanceText">Daftar Hadir (opsional, 1 baris per mahasiswa)</Label>
+                <Textarea
+                  id="usageAttendanceText"
+                  name="attendanceText"
+                  value={usageAttendanceText}
+                  onChange={(e) => setUsageAttendanceText(e.target.value)}
+                  maxLength={20000}
+                  rows={6}
+                  placeholder={"Contoh:\nP27834021001 - Andi Pratama\nP27834021002 - Siti Aminah\natau cukup nama tanpa NIM"}
+                />
+                <p className="text-xs text-muted-foreground">
+                  Jika diisi, jumlah baris harus sama dengan jumlah mahasiswa.
+                </p>
+              </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateUsageOpen(false)}>
                   Batal
@@ -491,12 +522,13 @@ export function LabUsagePageClient({
                       <TableHead className="font-semibold">Kelompok</TableHead>
                       <TableHead className="font-semibold">Jumlah Mhs</TableHead>
                       <TableHead className="font-semibold">Durasi</TableHead>
+                      <TableHead className="text-right font-semibold">Aksi</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
                     {history.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={7} className="py-8 text-center text-muted-foreground">
+                        <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
                           Belum ada riwayat penggunaan laboratorium di database.
                         </TableCell>
                       </TableRow>
@@ -510,6 +542,13 @@ export function LabUsagePageClient({
                         <TableCell className="text-muted-foreground">{usage.groupName}</TableCell>
                         <TableCell className="text-muted-foreground">{usage.studentCount}</TableCell>
                         <TableCell className="text-muted-foreground">{usage.durationLabel}</TableCell>
+                        <TableCell>
+                          <div className="flex justify-end">
+                            <Button variant="ghost" size="icon" className="size-8" onClick={() => setSelectedHistory(usage)}>
+                              <Eye className="size-4" />
+                            </Button>
+                          </div>
+                        </TableCell>
                       </TableRow>
                     ))}
                   </TableBody>
@@ -626,6 +665,49 @@ export function LabUsagePageClient({
               </Button>
             </div>
           </form>
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!selectedHistory} onOpenChange={(open) => !open && setSelectedHistory(null)}>
+        <DialogContent className="max-w-2xl">
+          <DialogHeader>
+            <DialogTitle>Detail Riwayat Penggunaan Lab</DialogTitle>
+            <DialogDescription>
+              {selectedHistory ? `${selectedHistory.courseName} - ${selectedHistory.groupName}` : "Detail riwayat"}
+            </DialogDescription>
+          </DialogHeader>
+          {selectedHistory && (
+            <div className="grid gap-4">
+              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                <div><p className="text-muted-foreground">Laboratorium</p><p>{selectedHistory.labName}</p></div>
+                <div><p className="text-muted-foreground">Tanggal</p><p>{selectedHistory.date}</p></div>
+                <div><p className="text-muted-foreground">Jam</p><p>{selectedHistory.startTime} - {selectedHistory.endTime}</p></div>
+                <div><p className="text-muted-foreground">Durasi</p><p>{selectedHistory.durationLabel}</p></div>
+                <div><p className="text-muted-foreground">Kelompok</p><p>{selectedHistory.groupName}</p></div>
+                <div><p className="text-muted-foreground">Jumlah Mhs</p><p>{selectedHistory.studentCount}</p></div>
+              </div>
+              <div>
+                <p className="mb-2 text-sm font-medium text-foreground">Daftar Hadir</p>
+                <div className="max-h-72 overflow-auto rounded-lg border border-border/50 bg-muted/30">
+                  {selectedHistory.attendance.length === 0 ? (
+                    <div className="px-3 py-3 text-sm text-muted-foreground">Belum ada daftar hadir tercatat.</div>
+                  ) : (
+                    <div className="divide-y divide-border/40">
+                      {selectedHistory.attendance.map((a, idx) => (
+                        <div key={`${a.attendeeNim ?? a.attendeeName}-${idx}`} className="flex items-center justify-between gap-3 px-3 py-2 text-sm">
+                          <span className="text-foreground">{a.attendeeName}</span>
+                          <span className="font-mono text-xs text-muted-foreground">{a.attendeeNim ?? "-"}</span>
+                        </div>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+              <div className="flex justify-end">
+                <Button variant="outline" onClick={() => setSelectedHistory(null)}>Tutup</Button>
+              </div>
+            </div>
+          )}
         </DialogContent>
       </Dialog>
     </div>

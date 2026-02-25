@@ -3,13 +3,14 @@ import { asc, desc, eq, inArray, sql } from "drizzle-orm"
 
 import {
   LabUsagePageClient,
+  type LabUsageAttendanceRow,
   type LabUsageHistoryRow,
   type LabUsageLabOption,
   type LabUsageScheduleRow,
 } from "@/components/lab-usage/lab-usage-page-client"
 import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
-import { labSchedules, labUsageLogs, labs, userLabAssignments } from "@/lib/db/schema"
+import { labSchedules, labUsageAttendances, labUsageLogs, labs, userLabAssignments } from "@/lib/db/schema"
 
 type Role = "admin" | "mahasiswa" | "petugas_plp"
 
@@ -94,7 +95,7 @@ export default async function LabUsagePage() {
         ? inArray(labs.id, accessibleLabIds)
         : sql`false`
 
-  const [labRows, scheduleRowsRaw, historyRowsRaw] = await Promise.all([
+  const [labRows, scheduleRowsRaw, historyRowsRaw, attendanceRowsRaw] = await Promise.all([
     db.select({ id: labs.id, name: labs.name }).from(labs).where(labsFilter).orderBy(asc(labs.name)),
     db
       .select({
@@ -130,6 +131,16 @@ export default async function LabUsagePage() {
       .where(usageFilter)
       .orderBy(desc(labUsageLogs.startedAt))
       .limit(100),
+    db
+      .select({
+        usageLogId: labUsageAttendances.usageLogId,
+        attendeeName: labUsageAttendances.attendeeName,
+        attendeeNim: labUsageAttendances.attendeeNim,
+      })
+      .from(labUsageAttendances)
+      .innerJoin(labUsageLogs, eq(labUsageLogs.id, labUsageAttendances.usageLogId))
+      .where(usageFilter)
+      .orderBy(asc(labUsageAttendances.createdAt)),
   ])
 
   const labOptions: LabUsageLabOption[] = labRows.map((r) => ({ id: r.id, name: r.name }))
@@ -146,6 +157,16 @@ export default async function LabUsagePage() {
     capacity: r.capacity,
     enrolledCount: r.enrolledCount,
   }))
+  const attendanceMap = new Map<string, LabUsageAttendanceRow[]>()
+  for (const row of attendanceRowsRaw) {
+    const list = attendanceMap.get(row.usageLogId) ?? []
+    list.push({
+      attendeeName: row.attendeeName,
+      attendeeNim: row.attendeeNim,
+    })
+    attendanceMap.set(row.usageLogId, list)
+  }
+
   const history: LabUsageHistoryRow[] = historyRowsRaw.map((r) => ({
     id: r.id.slice(0, 8),
     labId: r.labId,
@@ -157,6 +178,7 @@ export default async function LabUsagePage() {
     startTime: fmtTime(r.startedAt),
     endTime: fmtTime(r.endedAt),
     durationLabel: fmtDuration(r.startedAt, r.endedAt),
+    attendance: attendanceMap.get(r.id) ?? [],
   }))
 
   return <LabUsagePageClient role={role as "admin" | "petugas_plp"} labs={labOptions} schedules={schedules} history={history} />

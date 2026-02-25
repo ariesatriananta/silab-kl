@@ -8,6 +8,41 @@
       "when": 1771994416096,
       "tag": "0000_happy_hedge_knight",
       "breakpoints": true
+    },
+    {
+      "idx": 1,
+      "version": "7",
+      "when": 1772038128289,
+      "tag": "0001_colossal_tarot",
+      "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1772038947615,
+      "tag": "0002_fuzzy_morgan_stark",
+      "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1772039359910,
+      "tag": "0003_same_thunderbolt",
+      "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1772040010482,
+      "tag": "0004_reflective_spot",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1772041861708,
+      "tag": "0005_free_venom",
+      "breakpoints": true
     }
   ]
 }

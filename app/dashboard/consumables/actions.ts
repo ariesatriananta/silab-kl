@@ -9,13 +9,16 @@ import { db } from "@/lib/db/client"
 import {
   borrowingTransactionItems,
   consumableItems,
+  consumableStockMovements,
   materialRequestItems,
   materialRequests,
   userLabAssignments,
 } from "@/lib/db/schema"
+import { writeSecurityAuditLog } from "@/lib/security/audit"
 
 export type MaterialRequestActionResult = { ok: boolean; message: string }
 export type ConsumableMasterActionResult = { ok: boolean; message: string }
+export type ConsumableStockInActionResult = { ok: boolean; message: string }
 
 const createMaterialRequestSchema = z.object({
   labId: z.string().uuid(),
@@ -57,12 +60,27 @@ const consumableDeactivateSchema = z.object({
   consumableId: z.string().uuid(),
 })
 
+const consumableStockInSchema = z.object({
+  consumableId: z.string().uuid(),
+  qtyIn: z.coerce.number().int().min(1),
+  note: z.string().trim().max(500).optional(),
+  source: z.string().trim().max(100).optional(),
+})
+
 function generateMaterialRequestCode() {
   const now = new Date()
   const pad = (n: number) => String(n).padStart(2, "0")
   const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
   const rnd = Math.floor(Math.random() * 9000) + 1000
   return `MTR-${ymd}-${rnd}`
+}
+
+function movementNote(base: string | undefined, source: string | undefined) {
+  const note = base?.trim()
+  const src = source?.trim()
+  if (src && note) return `${src} | ${note}`
+  if (src) return `Sumber: ${src}`
+  return note || null
 }
 
 async function getActor() {
@@ -188,6 +206,17 @@ export async function createMaterialRequestAction(
     }
   }
 
+  await writeSecurityAuditLog({
+    category: "consumables",
+    action: "create_material_request",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role,
+    targetType: "lab",
+    targetId: parsed.data.labId,
+    metadata: { itemCount: items.length },
+  })
+
   revalidatePath("/dashboard/consumables")
   revalidatePath("/dashboard/dashboard")
   return { ok: true, message: "Permintaan bahan berhasil dibuat." }
@@ -214,15 +243,33 @@ export async function createConsumableMasterAction(
   if ("error" in auth) return { ok: false, message: auth.error ?? "Akses ditolak." }
 
   try {
-    await db.insert(consumableItems).values({
-      labId: parsed.data.labId,
-      code: parsed.data.code,
-      name: parsed.data.name,
-      category: parsed.data.category,
-      unit: parsed.data.unit,
-      stockQty: parsed.data.stockQty,
-      minStockQty: parsed.data.minStockQty,
-      isActive: true,
+    await db.transaction(async (tx) => {
+      const [inserted] = await tx
+        .insert(consumableItems)
+        .values({
+          labId: parsed.data.labId,
+          code: parsed.data.code,
+          name: parsed.data.name,
+          category: parsed.data.category,
+          unit: parsed.data.unit,
+          stockQty: parsed.data.stockQty,
+          minStockQty: parsed.data.minStockQty,
+          isActive: true,
+        })
+        .returning({ id: consumableItems.id })
+
+      if (inserted && parsed.data.stockQty > 0) {
+        await tx.insert(consumableStockMovements).values({
+          consumableItemId: inserted.id,
+          movementType: "stock_in",
+          qtyDelta: parsed.data.stockQty,
+          qtyBefore: 0,
+          qtyAfter: parsed.data.stockQty,
+          note: "Stok awal saat membuat master bahan.",
+          referenceType: "consumable_master_create",
+          actorUserId: auth.session.user.id,
+        })
+      }
     })
   } catch (error) {
     const duplicate =
@@ -233,6 +280,17 @@ export async function createConsumableMasterAction(
       message: duplicate ? "Kode bahan sudah digunakan." : "Gagal menambahkan master bahan.",
     }
   }
+
+  await writeSecurityAuditLog({
+    category: "consumables",
+    action: "create_master",
+    outcome: "success",
+    userId: auth.session.user.id,
+    actorRole: auth.session.user.role,
+    targetType: "lab",
+    targetId: parsed.data.labId,
+    metadata: { code: parsed.data.code, stockQty: parsed.data.stockQty },
+  })
 
   revalidatePath("/dashboard/consumables")
   return { ok: true, message: "Master bahan berhasil ditambahkan." }
@@ -258,7 +316,7 @@ export async function updateConsumableMasterAction(
 
   const existing = await db.query.consumableItems.findFirst({
     where: eq(consumableItems.id, parsed.data.consumableId),
-    columns: { id: true, labId: true },
+    columns: { id: true, labId: true, stockQty: true },
   })
   if (!existing) return { ok: false, message: "Bahan tidak ditemukan." }
 
@@ -273,19 +331,36 @@ export async function updateConsumableMasterAction(
   }
 
   try {
-    await db
-      .update(consumableItems)
-      .set({
-        labId: parsed.data.labId,
-        code: parsed.data.code,
-        name: parsed.data.name,
-        category: parsed.data.category,
-        unit: parsed.data.unit,
-        stockQty: parsed.data.stockQty,
-        minStockQty: parsed.data.minStockQty,
-        updatedAt: new Date(),
-      })
-      .where(eq(consumableItems.id, parsed.data.consumableId))
+    await db.transaction(async (tx) => {
+      await tx
+        .update(consumableItems)
+        .set({
+          labId: parsed.data.labId,
+          code: parsed.data.code,
+          name: parsed.data.name,
+          category: parsed.data.category,
+          unit: parsed.data.unit,
+          stockQty: parsed.data.stockQty,
+          minStockQty: parsed.data.minStockQty,
+          updatedAt: new Date(),
+        })
+        .where(eq(consumableItems.id, parsed.data.consumableId))
+
+      const delta = parsed.data.stockQty - existing.stockQty
+      if (delta !== 0) {
+        await tx.insert(consumableStockMovements).values({
+          consumableItemId: parsed.data.consumableId,
+          movementType: "manual_adjustment",
+          qtyDelta: delta,
+          qtyBefore: existing.stockQty,
+          qtyAfter: parsed.data.stockQty,
+          note: "Koreksi stok melalui edit master bahan.",
+          referenceType: "consumable_master_update",
+          referenceId: parsed.data.consumableId,
+          actorUserId: auth.session.user.id,
+        })
+      }
+    })
   } catch (error) {
     const duplicate =
       error instanceof Error &&
@@ -296,8 +371,95 @@ export async function updateConsumableMasterAction(
     }
   }
 
+  await writeSecurityAuditLog({
+    category: "consumables",
+    action: "update_master",
+    outcome: "success",
+    userId: auth.session.user.id,
+    actorRole: auth.session.user.role,
+    targetType: "consumable_item",
+    targetId: parsed.data.consumableId,
+    metadata: { labId: parsed.data.labId },
+  })
+
   revalidatePath("/dashboard/consumables")
   return { ok: true, message: "Master bahan berhasil diperbarui." }
+}
+
+export async function stockInConsumableAction(
+  _prev: ConsumableStockInActionResult | null,
+  formData: FormData,
+): Promise<ConsumableStockInActionResult> {
+  const parsed = consumableStockInSchema.safeParse({
+    consumableId: formData.get("consumableId"),
+    qtyIn: formData.get("qtyIn"),
+    note: formData.get("note")?.toString() || undefined,
+    source: formData.get("source")?.toString() || undefined,
+  })
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Data stok masuk tidak valid." }
+
+  const existing = await db.query.consumableItems.findFirst({
+    where: eq(consumableItems.id, parsed.data.consumableId),
+    columns: { id: true, labId: true, stockQty: true, name: true, isActive: true },
+  })
+  if (!existing) return { ok: false, message: "Bahan tidak ditemukan." }
+  if (!existing.isActive) return { ok: false, message: "Bahan nonaktif tidak dapat ditambah stok." }
+
+  const auth = await ensureConsumableManagerForLab(existing.labId)
+  if ("error" in auth) return { ok: false, message: auth.error ?? "Akses ditolak." }
+
+  try {
+    await db.transaction(async (tx) => {
+      const before = existing.stockQty
+      const after = before + parsed.data.qtyIn
+      await tx
+        .update(consumableItems)
+        .set({
+          stockQty: after,
+          updatedAt: new Date(),
+        })
+        .where(eq(consumableItems.id, existing.id))
+
+      await tx.insert(consumableStockMovements).values({
+        consumableItemId: existing.id,
+        movementType: "stock_in",
+        qtyDelta: parsed.data.qtyIn,
+        qtyBefore: before,
+        qtyAfter: after,
+        note: movementNote(parsed.data.note, parsed.data.source),
+        referenceType: "manual_stock_in",
+        referenceId: existing.id,
+        actorUserId: auth.session.user.id,
+      })
+    })
+  } catch (error) {
+    console.error("stockInConsumableAction error:", error)
+    await writeSecurityAuditLog({
+      category: "consumables",
+      action: "stock_in",
+      outcome: "failure",
+      userId: auth.session.user.id,
+      actorRole: auth.session.user.role,
+      targetType: "consumable_item",
+      targetId: existing.id,
+    })
+    return { ok: false, message: "Gagal memproses stok masuk." }
+  }
+
+  await writeSecurityAuditLog({
+    category: "consumables",
+    action: "stock_in",
+    outcome: "success",
+    userId: auth.session.user.id,
+    actorRole: auth.session.user.role,
+    targetType: "consumable_item",
+    targetId: existing.id,
+    metadata: { qtyIn: parsed.data.qtyIn },
+  })
+
+  revalidatePath("/dashboard/consumables")
+  revalidatePath("/dashboard/dashboard")
+  return { ok: true, message: `Stok masuk untuk "${existing.name}" berhasil dicatat.` }
 }
 
 export async function deactivateConsumableMasterAction(
@@ -346,6 +508,16 @@ export async function deactivateConsumableMasterAction(
     })
     .where(eq(consumableItems.id, existing.id))
 
+  await writeSecurityAuditLog({
+    category: "consumables",
+    action: "deactivate_master",
+    outcome: "success",
+    userId: auth.session.user.id,
+    actorRole: auth.session.user.role,
+    targetType: "consumable_item",
+    targetId: existing.id,
+  })
+
   revalidatePath("/dashboard/consumables")
   return { ok: true, message: `Bahan "${existing.name}" berhasil dinonaktifkan.` }
 }
@@ -390,6 +562,16 @@ export async function approveMaterialRequestWithFeedbackAction(
     })
     .where(eq(materialRequests.id, req.id))
 
+  await writeSecurityAuditLog({
+    category: "consumables",
+    action: "approve_material_request",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role,
+    targetType: "material_request",
+    targetId: req.id,
+  })
+
   revalidatePath("/dashboard/consumables")
   return { ok: true, message: "Permintaan bahan berhasil disetujui." }
 }
@@ -421,6 +603,16 @@ export async function rejectMaterialRequestWithFeedbackAction(
       updatedAt: new Date(),
     })
     .where(eq(materialRequests.id, req.id))
+
+  await writeSecurityAuditLog({
+    category: "consumables",
+    action: "reject_material_request",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role,
+    targetType: "material_request",
+    targetId: req.id,
+  })
 
   revalidatePath("/dashboard/consumables")
   return { ok: true, message: "Permintaan bahan berhasil ditolak." }
@@ -471,6 +663,8 @@ export async function fulfillMaterialRequestWithFeedbackAction(
       }
 
       for (const line of lines) {
+        const currentStock = stockMap.get(line.consumableItemId) ?? 0
+        const afterStock = currentStock - line.qtyRequested
         await tx
           .update(consumableItems)
           .set({
@@ -478,6 +672,18 @@ export async function fulfillMaterialRequestWithFeedbackAction(
             updatedAt: new Date(),
           })
           .where(eq(consumableItems.id, line.consumableItemId))
+
+        await tx.insert(consumableStockMovements).values({
+          consumableItemId: line.consumableItemId,
+          movementType: "material_request_fulfill",
+          qtyDelta: -line.qtyRequested,
+          qtyBefore: currentStock,
+          qtyAfter: afterStock,
+          note: parsed.data.note?.trim() || "Pemenuhan permintaan bahan",
+          referenceType: "material_request",
+          referenceId: req.id,
+          actorUserId: session.user.id,
+        })
 
         await tx
           .update(materialRequestItems)
@@ -498,6 +704,16 @@ export async function fulfillMaterialRequestWithFeedbackAction(
     })
   } catch (error) {
     console.error("fulfillMaterialRequestAction error:", error)
+    await writeSecurityAuditLog({
+      category: "consumables",
+      action: "fulfill_material_request",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role,
+      targetType: "material_request",
+      targetId: req.id,
+      metadata: { message: error instanceof Error ? error.message : "unknown_error" },
+    })
     return {
       ok: false,
       message:
@@ -506,6 +722,16 @@ export async function fulfillMaterialRequestWithFeedbackAction(
           : "Pemenuhan permintaan bahan gagal diproses.",
     }
   }
+
+  await writeSecurityAuditLog({
+    category: "consumables",
+    action: "fulfill_material_request",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role,
+    targetType: "material_request",
+    targetId: req.id,
+  })
 
   revalidatePath("/dashboard/consumables")
   return { ok: true, message: "Permintaan bahan berhasil dipenuhi." }

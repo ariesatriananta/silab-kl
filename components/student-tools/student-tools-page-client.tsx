@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { useState } from "react"
 import { ArrowRight, Search, Wrench } from "lucide-react"
 
@@ -17,6 +18,8 @@ import {
 
 export type StudentToolCatalogRow = {
   id: string
+  modelId: string
+  labId: string
   name: string
   image?: string | null
   available: number
@@ -105,12 +108,20 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
                     </span>
                   </div>
 
-                  <Button className="w-full" disabled={!isAvailable} variant={isAvailable ? "default" : "secondary"}>
+                  <Button
+                    className="w-full"
+                    disabled={!isAvailable}
+                    variant={isAvailable ? "default" : "secondary"}
+                    asChild={isAvailable}
+                  >
                     {isAvailable ? (
-                      <span className="flex items-center gap-2">
+                      <Link
+                        href={`/dashboard/borrowing?openCreate=1&labId=${encodeURIComponent(tool.labId)}&toolModelCode=${encodeURIComponent(tool.id)}`}
+                        className="flex items-center justify-center gap-2"
+                      >
                         Pinjam Sekarang
                         <ArrowRight className="size-4" />
-                      </span>
+                      </Link>
                     ) : (
                       "Tidak Tersedia"
                     )}

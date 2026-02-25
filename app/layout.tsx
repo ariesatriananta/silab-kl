@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ['latin'] })
 
 export const metadata: Metadata = {
   title: 'SILAB-KL | Poltekkes Kemenkes Surabaya',
-  description: 'Sistem Informasi Laboratorium - Klinik Laboratorium Poltekkes Kemenkes Surabaya',
+  description: 'Sistem Informasi Laboratorium - Jurusan Kesehatan Lingkungan Poltekkes Kemenkes Surabaya',
 }
 
 export const viewport: Viewport = {

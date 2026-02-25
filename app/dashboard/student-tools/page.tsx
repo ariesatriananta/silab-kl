@@ -13,6 +13,8 @@ async function getStudentCatalogData(): Promise<StudentToolCatalogRow[]> {
   const rows = await db
     .select({
       id: toolModels.code,
+      modelId: toolModels.id,
+      labId: toolModels.labId,
       name: toolModels.name,
       image: toolModels.imageUrl,
       lab: labs.name,
@@ -28,6 +30,8 @@ async function getStudentCatalogData(): Promise<StudentToolCatalogRow[]> {
 
   return rows.map((row) => ({
     id: row.id,
+    modelId: row.modelId,
+    labId: row.labId,
     name: row.name,
     image: row.image,
     lab: row.lab,
