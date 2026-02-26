@@ -125,23 +125,23 @@ export default async function BorrowingProofPage({
   }
 
   return (
-    <div className="min-h-screen bg-white text-black print:bg-white">
-      <div className="mx-auto max-w-4xl p-4 print:p-0">
-        <div className="mb-4 flex items-center justify-between print:hidden">
-          <Link href="/dashboard/borrowing" className="text-sm underline">
+    <div className="min-h-screen bg-muted/20 text-black print:bg-white">
+      <div className="mx-auto max-w-5xl p-4 sm:p-6 print:max-w-4xl print:p-0">
+        <div className="mb-4 flex items-center justify-between rounded-xl border border-border/60 bg-background px-4 py-3 shadow-sm print:hidden">
+          <Link href="/dashboard/borrowing" className="text-sm font-medium text-foreground underline-offset-4 hover:underline">
             Kembali ke Peminjaman
           </Link>
           <BorrowingProofPrintButton />
         </div>
 
-        <div className="mx-auto border border-black p-6 print:border-none">
+        <div className="mx-auto rounded-2xl border border-black bg-white p-6 shadow-sm print:rounded-none print:border-none print:p-6 print:shadow-none">
           <header className="border-b border-black pb-4 text-center">
             <p className="text-sm font-semibold">LABORATORIUM JURUSAN KESEHATAN LINGKUNGAN</p>
             <p className="text-xs">Kemenkes Poltekkes Surabaya</p>
             <h1 className="mt-3 text-lg font-bold">LEMBAR PEMINJAMAN ALAT LABORATORIUM</h1>
           </header>
 
-          <section className="mt-4 grid grid-cols-1 gap-2 text-sm md:grid-cols-2">
+          <section className="mt-4 grid grid-cols-1 gap-2 rounded-lg border border-black/40 p-3 text-sm md:grid-cols-2 print:rounded-none print:border-none print:p-0">
             <div><span className="font-semibold">Kode Transaksi:</span> {row.code}</div>
             <div><span className="font-semibold">Status:</span> {statusLabelMap[row.status] ?? row.status}</div>
             <div><span className="font-semibold">Laboratorium:</span> {row.labName}</div>
@@ -159,6 +159,10 @@ export default async function BorrowingProofPage({
           </section>
 
           <section className="mt-5">
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Rincian Item Peminjaman</h2>
+              <span className="text-xs text-neutral-600">Alat + bahan dalam satu transaksi</span>
+            </div>
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>
@@ -224,13 +228,16 @@ export default async function BorrowingProofPage({
                 ))}
               </tbody>
             </table>
-            <p className="mt-2 text-xs">
+            <p className="mt-2 rounded border border-black/30 px-2 py-1 text-xs print:rounded-none print:border-none print:px-0 print:py-0">
               Ket: (*) diisi petugas lab. Kolom kondisi/paraf disediakan sebagai bukti serah-terima/pengembalian manual saat dibutuhkan.
             </p>
           </section>
 
           <section className="mt-5">
-            <h2 className="mb-2 text-sm font-semibold">Riwayat Approval</h2>
+            <div className="mb-2 flex items-center justify-between">
+              <h2 className="text-sm font-semibold">Riwayat Approval</h2>
+              <span className="text-xs text-neutral-600">{approvals.length} keputusan</span>
+            </div>
             <table className="w-full border-collapse text-sm">
               <thead>
                 <tr>

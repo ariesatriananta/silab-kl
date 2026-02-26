@@ -2,7 +2,7 @@
 
 import Link from "next/link"
 import { usePathname } from "next/navigation"
-import { signOut, useSession } from "next-auth/react"
+import { useSession } from "next-auth/react"
 import {
   LayoutDashboard,
   Wrench,
@@ -11,13 +11,12 @@ import {
   CalendarDays,
   GraduationCap,
   KeyRound,
-  LogOut,
+  UserCircle2,
   Users,
 } from "lucide-react"
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarGroupLabel,
@@ -27,8 +26,6 @@ import {
   SidebarMenuItem,
   SidebarSeparator,
 } from "@/components/ui/sidebar"
-import { Avatar, AvatarFallback } from "@/components/ui/avatar"
-import { Button } from "@/components/ui/button"
 
 type Role = "admin" | "mahasiswa" | "petugas_plp"
 
@@ -56,9 +53,12 @@ const studentNavItems: Array<{
 const accountNavItems: Array<{
   title: string
   href: string
-  icon: typeof KeyRound
+  icon: typeof LayoutDashboard
   roles: Role[]
-}> = [{ title: "Keamanan Akun", href: "/dashboard/account/security", icon: KeyRound, roles: ["admin", "petugas_plp", "mahasiswa"] }]
+}> = [
+  { title: "My Profile", href: "/dashboard/account/profile", icon: UserCircle2, roles: ["admin", "petugas_plp", "mahasiswa"] },
+  { title: "Ganti Password", href: "/dashboard/account/security", icon: KeyRound, roles: ["admin", "petugas_plp", "mahasiswa"] },
+]
 
 export function AppSidebar() {
   const pathname = usePathname()
@@ -68,16 +68,6 @@ export function AppSidebar() {
   const visibleMainNav = mainNavItems.filter((item) => item.roles.includes(role))
   const visibleStudentNav = studentNavItems.filter((item) => item.roles.includes(role))
   const visibleAccountNav = accountNavItems.filter((item) => item.roles.includes(role))
-  const displayName = session?.user?.name ?? "Pengguna"
-  const displayEmail = session?.user?.email ?? session?.user?.username ?? "-"
-  const initials = displayName
-    .split(" ")
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((word) => word[0]?.toUpperCase())
-    .join("") || "U"
-  const roleLabel =
-    role === "admin" ? "Admin" : role === "petugas_plp" ? "Petugas PLP" : "Mahasiswa"
   const operasionalNav = visibleMainNav.filter((item) =>
     ["/dashboard/borrowing", "/dashboard/consumables", "/dashboard/lab-usage"].includes(item.href),
   )
@@ -211,37 +201,6 @@ export function AppSidebar() {
           </>
         )}
       </SidebarContent>
-      <SidebarFooter>
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton tooltip="Profil Pengguna" size="lg">
-              <Avatar className="size-6">
-                <AvatarFallback className="bg-primary text-primary-foreground text-xs">
-                  {initials}
-                </AvatarFallback>
-              </Avatar>
-              <div className="flex flex-col gap-0.5 leading-none">
-                <span className="text-xs font-medium">{displayName}</span>
-                <span className="text-xs text-sidebar-foreground/60">{roleLabel}</span>
-                <span className="text-xs text-sidebar-foreground/60 truncate">{displayEmail}</span>
-              </div>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-          <SidebarMenuItem>
-            <SidebarMenuButton asChild tooltip="Keluar">
-              <Button
-                type="button"
-                variant="ghost"
-                className="h-auto w-full justify-start px-2 py-1.5"
-                onClick={() => signOut({ callbackUrl: "/" })}
-              >
-                <LogOut className="size-4" />
-                <span>Keluar</span>
-              </Button>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
-      </SidebarFooter>
     </Sidebar>
   )
 }

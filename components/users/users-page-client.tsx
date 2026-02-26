@@ -1,7 +1,17 @@
 "use client"
 
 import { useActionState, useEffect, useMemo, useRef, useState } from "react"
-import { ArrowDownAZ, ArrowUpAZ, Eye, KeyRound, Plus, ShieldCheck, UserCog, Users } from "lucide-react"
+import {
+  ArrowDownAZ,
+  ArrowUpAZ,
+  Eye,
+  KeyRound,
+  Plus,
+  ShieldCheck,
+  ShieldAlert,
+  UserCog,
+  Users,
+} from "lucide-react"
 
 import {
   createUserManagementAction,
@@ -76,6 +86,12 @@ const roleBadgeClass: Record<UserManagementRow["role"], string> = {
   petugas_plp: "rounded-full border-success/20 bg-success/10 text-success-foreground",
 }
 
+const auditActionLabel: Record<string, string> = {
+  create_user: "Buat User",
+  update_user: "Ubah User",
+  reset_user_password: "Reset Password User",
+}
+
 function UserFormFields({
   mode,
   labs,
@@ -120,7 +136,7 @@ function UserFormFields({
         <div className="grid gap-2">
           <Label>Role</Label>
           <Select value={role} onValueChange={(v) => setRole(v as UserManagementRow["role"])}>
-            <SelectTrigger>
+            <SelectTrigger className="w-full">
               <SelectValue placeholder="Pilih role" />
             </SelectTrigger>
             <SelectContent>
@@ -351,6 +367,9 @@ export function UsersPageClient({
               Kelola akun admin, petugas PLP, dan mahasiswa termasuk assignment laboratorium untuk petugas PLP.
             </p>
           </div>
+          <div className="rounded-xl border border-border/50 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
+            Hanya <span className="font-medium text-foreground">Admin</span> yang dapat membuat, mengubah, dan reset password user.
+          </div>
           <Dialog open={createOpen} onOpenChange={setCreateOpen}>
             <DialogTrigger asChild>
               <Button>
@@ -369,19 +388,22 @@ export function UsersPageClient({
                     {createState.message}
                   </div>
                 )}
-                <UserFormFields
-                  mode="create"
-                  labs={labs}
-                  role={createRole}
-                  setRole={(nextRole) => {
-                    setCreateRole(nextRole)
-                    if (nextRole !== "petugas_plp") setCreateAssignments([])
-                  }}
-                  assignmentLabIds={createAssignments}
-                  setAssignmentLabIds={setCreateAssignments}
-                  active={createActive}
-                  setActive={setCreateActive}
-                />
+                <div className="grid gap-4 rounded-xl border border-border/50 bg-muted/10 p-4">
+                  <p className="text-sm font-medium text-foreground">Data Akun</p>
+                  <UserFormFields
+                    mode="create"
+                    labs={labs}
+                    role={createRole}
+                    setRole={(nextRole) => {
+                      setCreateRole(nextRole)
+                      if (nextRole !== "petugas_plp") setCreateAssignments([])
+                    }}
+                    assignmentLabIds={createAssignments}
+                    setAssignmentLabIds={setCreateAssignments}
+                    active={createActive}
+                    setActive={setCreateActive}
+                  />
+                </div>
                 <div className="flex justify-end gap-2">
                   <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={createPending}>
                     Batal
@@ -410,6 +432,23 @@ export function UsersPageClient({
         </TabsList>
 
         <TabsContent value="users" className="mt-0 space-y-4">
+          <Card className="border-border/50 bg-card shadow-sm">
+            <CardContent className="grid gap-3 p-4 sm:grid-cols-2">
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fokus Halaman</p>
+                <p className="mt-1 text-sm text-foreground">
+                  Gunakan tab ini untuk mengelola akun user dan assignment lab Petugas PLP.
+                </p>
+              </div>
+              <div>
+                <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Catatan Operasional</p>
+                <p className="mt-1 text-sm text-muted-foreground">
+                  Reset password ke <span className="font-medium text-foreground">password</span> akan memaksa user ganti password saat login.
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">Filter & Urutan User</CardTitle>
@@ -487,7 +526,7 @@ export function UsersPageClient({
             Geser tabel ke samping pada layar kecil untuk melihat seluruh kolom.
           </div>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className="min-w-[1200px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead>Nama</TableHead>
@@ -620,9 +659,9 @@ export function UsersPageClient({
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua Aksi</SelectItem>
-                    <SelectItem value="create_user">Create User</SelectItem>
-                    <SelectItem value="update_user">Update User</SelectItem>
-                    <SelectItem value="reset_user_password">Reset Password</SelectItem>
+                    <SelectItem value="create_user">Buat User</SelectItem>
+                    <SelectItem value="update_user">Ubah User</SelectItem>
+                    <SelectItem value="reset_user_password">Reset Password User</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={auditOutcomeFilter} onValueChange={(v) => setAuditOutcomeFilter(v as typeof auditOutcomeFilter)}>
@@ -649,10 +688,10 @@ export function UsersPageClient({
             </CardHeader>
             <CardContent className="px-0">
               <div className="px-6 pb-2 text-xs text-muted-foreground">
-                Menampilkan log perubahan user, reset password, dan aksi manajemen user terbaru.
+                Menampilkan log perubahan user, reset password, dan aksi manajemen user terbaru. Geser tabel ke samping pada layar kecil untuk melihat kolom target/detail.
               </div>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[1100px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead>Waktu</TableHead>
@@ -688,7 +727,7 @@ export function UsersPageClient({
                         <TableCell className="max-w-[220px] truncate text-sm text-foreground">{log.actorLabel}</TableCell>
                         <TableCell>
                           <div className="max-w-[260px]">
-                            <p className="text-sm text-foreground">{log.action}</p>
+                            <p className="text-sm text-foreground">{auditActionLabel[log.action] ?? log.action}</p>
                             <p className="truncate text-xs text-muted-foreground">{log.category}</p>
                           </div>
                         </TableCell>
@@ -735,20 +774,23 @@ export function UsersPageClient({
                 </div>
               )}
               <input type="hidden" name="userId" value={selectedUser.id} />
-              <UserFormFields
-                mode="edit"
-                labs={labs}
-                role={editRole}
-                setRole={(nextRole) => {
-                  setEditRole(nextRole)
-                  if (nextRole !== "petugas_plp") setEditAssignments([])
-                }}
-                assignmentLabIds={editAssignments}
-                setAssignmentLabIds={setEditAssignments}
-                active={editActive}
-                setActive={setEditActive}
-                defaultValues={selectedUser}
-              />
+              <div className="grid gap-4 rounded-xl border border-border/50 bg-muted/10 p-4">
+                <p className="text-sm font-medium text-foreground">Data User & Assignment</p>
+                <UserFormFields
+                  mode="edit"
+                  labs={labs}
+                  role={editRole}
+                  setRole={(nextRole) => {
+                    setEditRole(nextRole)
+                    if (nextRole !== "petugas_plp") setEditAssignments([])
+                  }}
+                  assignmentLabIds={editAssignments}
+                  setAssignmentLabIds={setEditAssignments}
+                  active={editActive}
+                  setActive={setEditActive}
+                  defaultValues={selectedUser}
+                />
+              </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setSelectedUser(null)} disabled={updatePending}>
                   Tutup
@@ -780,6 +822,14 @@ export function UsersPageClient({
                 </div>
               )}
               <input type="hidden" name="userId" value={resetPasswordUser.id} />
+              <div className="rounded-xl border border-warning/20 bg-warning/5 px-3 py-2 text-sm text-muted-foreground">
+                <div className="flex items-start gap-2">
+                  <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
+                  <p>
+                    Reset password akan mengganti kredensial user secara langsung. Informasikan password baru ke user melalui kanal yang aman.
+                  </p>
+                </div>
+              </div>
               <div className="grid gap-2">
                 <Label htmlFor="resetPasswordValue">Password Baru</Label>
                 <Input
@@ -813,7 +863,7 @@ export function UsersPageClient({
           <DialogHeader>
             <DialogTitle>Detail Audit User</DialogTitle>
             <DialogDescription>
-              {selectedAudit ? `${selectedAudit.action} - ${selectedAudit.createdAt}` : "Detail audit"}
+              {selectedAudit ? `${auditActionLabel[selectedAudit.action] ?? selectedAudit.action} - ${selectedAudit.createdAt}` : "Detail audit"}
             </DialogDescription>
           </DialogHeader>
           {selectedAudit && (
@@ -827,13 +877,17 @@ export function UsersPageClient({
                   </Badge>
                 </div>
                 <div><p className="text-muted-foreground">Aktor</p><p className="text-foreground">{selectedAudit.actorLabel}</p></div>
-                <div><p className="text-muted-foreground">Aksi</p><p className="font-mono text-xs text-foreground">{selectedAudit.action}</p></div>
+                <div>
+                  <p className="text-muted-foreground">Aksi</p>
+                  <p className="text-foreground">{auditActionLabel[selectedAudit.action] ?? selectedAudit.action}</p>
+                  <p className="font-mono text-xs text-muted-foreground">{selectedAudit.action}</p>
+                </div>
                 <div><p className="text-muted-foreground">Identifier</p><p className="font-mono text-xs text-foreground">{selectedAudit.identifier ?? "-"}</p></div>
                 <div><p className="text-muted-foreground">Target</p><p className="font-mono text-xs text-foreground">{selectedAudit.targetType ?? "-"} / {selectedAudit.targetId ?? "-"}</p></div>
               </div>
               <div>
                 <p className="mb-2 text-sm font-medium text-foreground">Metadata (JSON)</p>
-                <pre className="max-h-72 overflow-auto rounded-lg border border-border/50 bg-muted/20 p-3 text-xs text-muted-foreground whitespace-pre-wrap break-all">
+                <pre className="max-h-72 overflow-auto rounded-xl border border-border/50 bg-muted/20 p-3 text-xs text-muted-foreground whitespace-pre-wrap break-all">
                   {selectedAudit.metadataSummary
                     ? (() => {
                         try {
@@ -846,7 +900,7 @@ export function UsersPageClient({
                 </pre>
               </div>
               <div className="flex justify-end">
-                <Button variant="outline" onClick={() => setSelectedAudit(null)}>Tutup</Button>
+                <Button type="button" variant="outline" onClick={() => setSelectedAudit(null)}>Tutup</Button>
               </div>
             </div>
           )}

@@ -443,7 +443,7 @@ export function ConsumablesPageClient({
                   <div className="grid gap-2">
                     <Label>Laboratorium</Label>
                     <Select name="labId" defaultValue={masterLabs[0]?.id}>
-                      <SelectTrigger><SelectValue placeholder="Pilih lab" /></SelectTrigger>
+                      <SelectTrigger className="w-full"><SelectValue placeholder="Pilih lab" /></SelectTrigger>
                       <SelectContent>
                         {masterLabs.map((lab) => <SelectItem key={lab.id} value={lab.id}>{lab.name}</SelectItem>)}
                       </SelectContent>
@@ -512,7 +512,7 @@ export function ConsumablesPageClient({
               <div className="grid gap-2">
                 <Label>Laboratorium</Label>
                 <Select name="labId" value={selectedLabId} onValueChange={handleLabChange}>
-                  <SelectTrigger>
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="Pilih lab" />
                   </SelectTrigger>
                   <SelectContent>
@@ -696,7 +696,7 @@ export function ConsumablesPageClient({
                 Geser tabel ke samping pada layar kecil untuk melihat seluruh kolom.
               </div>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[980px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="font-semibold">ID</TableHead>
@@ -805,8 +805,11 @@ export function ConsumablesPageClient({
               <CardTitle className="text-base font-semibold text-card-foreground">Histori Pergerakan Stok</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
+              <div className="px-6 pb-2 text-xs text-muted-foreground">
+                Geser tabel ke samping pada layar kecil untuk melihat detail perubahan stok, petugas, dan nilai sebelum/sesudah.
+              </div>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[1100px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead>Waktu</TableHead>
@@ -1064,7 +1067,7 @@ export function ConsumablesPageClient({
                 <div className="grid gap-2">
                   <Label>Laboratorium</Label>
                   <Select name="labId" defaultValue={editingConsumable.labId}>
-                    <SelectTrigger><SelectValue placeholder="Pilih lab" /></SelectTrigger>
+                    <SelectTrigger className="w-full"><SelectValue placeholder="Pilih lab" /></SelectTrigger>
                     <SelectContent>
                       {masterLabs.map((lab) => <SelectItem key={lab.id} value={lab.id}>{lab.name}</SelectItem>)}
                     </SelectContent>

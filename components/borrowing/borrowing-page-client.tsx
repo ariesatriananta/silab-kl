@@ -493,7 +493,7 @@ export function BorrowingPageClient({
               <div className="grid gap-2">
                 <Label htmlFor="labId">Laboratorium</Label>
                 <Select name="labId" value={selectedLabId} onValueChange={handleLabChange}>
-                  <SelectTrigger id="labId">
+                  <SelectTrigger id="labId" className="w-full">
                     <SelectValue placeholder="Pilih lab" />
                   </SelectTrigger>
                   <SelectContent>
@@ -514,7 +514,7 @@ export function BorrowingPageClient({
                   </>
                 ) : (
                   <Select name="requesterUserId" value={selectedRequesterId} onValueChange={setSelectedRequesterId}>
-                    <SelectTrigger id="requesterUserId">
+                    <SelectTrigger id="requesterUserId" className="w-full">
                       <SelectValue placeholder="Pilih mahasiswa" />
                     </SelectTrigger>
                     <SelectContent>
@@ -867,7 +867,7 @@ export function BorrowingPageClient({
               : "Geser tabel ke samping pada layar kecil untuk melihat seluruh kolom dan aksi."}
           </div>
           <div className="overflow-x-auto">
-            <Table>
+            <Table className={isMahasiswa ? "min-w-[820px]" : "min-w-[1080px]"}>
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead className="font-semibold">ID</TableHead>
@@ -1386,7 +1386,7 @@ export function BorrowingPageClient({
                             <div className="grid gap-2">
                               <Label htmlFor="returnTransactionItemId">Alat Dikembalikan</Label>
                               <Select name="transactionItemId" required>
-                                <SelectTrigger id="returnTransactionItemId">
+                                <SelectTrigger id="returnTransactionItemId" className="w-full">
                                   <SelectValue placeholder="Pilih alat" />
                                 </SelectTrigger>
                                 <SelectContent>
@@ -1401,7 +1401,7 @@ export function BorrowingPageClient({
                             <div className="grid gap-2">
                               <Label htmlFor="returnCondition">Kondisi Kembali</Label>
                               <Select name="returnCondition" defaultValue="baik">
-                                <SelectTrigger id="returnCondition">
+                                <SelectTrigger id="returnCondition" className="w-full">
                                   <SelectValue placeholder="Kondisi" />
                                 </SelectTrigger>
                                 <SelectContent>

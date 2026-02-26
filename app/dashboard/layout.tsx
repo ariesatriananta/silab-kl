@@ -4,6 +4,7 @@ import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/s
 import { AppSidebar } from "@/components/app-sidebar"
 import { Separator } from "@/components/ui/separator"
 import { usePathname } from "next/navigation"
+import { HeaderUserMenu } from "@/components/header-user-menu"
 
 const pageTitles: Record<string, string> = {
   "/dashboard": "Dashboard",
@@ -12,6 +13,9 @@ const pageTitles: Record<string, string> = {
   "/dashboard/consumables": "Bahan Habis Pakai",
   "/dashboard/lab-usage": "Penggunaan Laboratorium",
   "/dashboard/student-tools": "Katalog Alat Mahasiswa",
+  "/dashboard/users": "Kelola User",
+  "/dashboard/account/profile": "My Profile",
+  "/dashboard/account/security": "Ganti Password",
 }
 
 export default function DashboardLayout({
@@ -30,6 +34,9 @@ export default function DashboardLayout({
           <SidebarTrigger className="-ml-1" />
           <Separator orientation="vertical" className="h-5" />
           <h1 className="text-sm font-semibold text-foreground">{title}</h1>
+          <div className="ml-auto">
+            <HeaderUserMenu />
+          </div>
         </header>
         <div className="flex-1 overflow-auto">
           {children}

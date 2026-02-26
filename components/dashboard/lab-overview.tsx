@@ -12,19 +12,19 @@ export type LabOverviewItem = {
 
 export function LabOverview({ items }: { items: LabOverviewItem[] }) {
   return (
-    <Card className="border-border/50 bg-card shadow-sm">
+    <Card className="border-border/50 bg-gradient-to-br from-card to-muted/20 shadow-sm">
       <CardHeader className="pb-3">
         <CardTitle className="text-base font-semibold text-card-foreground">Ringkasan Laboratorium</CardTitle>
       </CardHeader>
       <CardContent>
         <div className="flex flex-col gap-4">
           {items.length === 0 && (
-            <div className="rounded-lg border border-border/50 bg-background p-4 text-sm text-muted-foreground">
+            <div className="rounded-xl border border-border/50 bg-background/70 p-4 text-sm text-muted-foreground">
               Belum ada data laboratorium.
             </div>
           )}
           {items.map((lab) => (
-            <div key={lab.name} className="flex flex-col gap-2 rounded-lg border border-border/50 bg-background p-4">
+            <div key={lab.name} className="flex flex-col gap-2 rounded-xl border border-border/50 bg-background/75 p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-2">
                   <FlaskConical className="size-4 text-primary" />

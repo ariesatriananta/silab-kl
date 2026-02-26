@@ -308,7 +308,7 @@ export function LabUsagePageClient({
                 <div className="grid gap-2">
                   <Label>Laboratorium</Label>
                   <Select name="labId" value={scheduleLabId} onValueChange={setScheduleLabId}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pilih lab" />
                     </SelectTrigger>
                     <SelectContent>
@@ -394,7 +394,7 @@ export function LabUsagePageClient({
                 <div className="grid gap-2">
                   <Label>Laboratorium</Label>
                   <Select name="labId" value={usageLabId} onValueChange={handleUsageLabChange}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pilih lab" />
                     </SelectTrigger>
                     <SelectContent>
@@ -409,7 +409,7 @@ export function LabUsagePageClient({
                 <div className="grid gap-2">
                   <Label>Link Jadwal (opsional)</Label>
                   <Select name="scheduleId" value={usageScheduleId} onValueChange={handleUsageScheduleChange}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pilih jadwal" />
                     </SelectTrigger>
                     <SelectContent>
@@ -634,7 +634,7 @@ export function LabUsagePageClient({
                 Geser tabel ke samping pada layar kecil untuk melihat semua kolom riwayat.
               </div>
               <div className="overflow-x-auto">
-                <Table>
+                <Table className="min-w-[980px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead className="font-semibold">ID</TableHead>
@@ -715,7 +715,7 @@ export function LabUsagePageClient({
                 <div className="grid gap-2">
                   <Label>Laboratorium</Label>
                   <Select name="labId" defaultValue={editingSchedule.labId}>
-                    <SelectTrigger>
+                    <SelectTrigger className="w-full">
                       <SelectValue placeholder="Pilih lab" />
                     </SelectTrigger>
                     <SelectContent>

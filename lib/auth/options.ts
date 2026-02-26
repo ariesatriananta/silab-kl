@@ -150,11 +150,17 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
-    async jwt({ token, user }) {
+    async jwt({ token, user, trigger, session }) {
       if (user) {
         token.role = (user as { role: AppRole }).role
         token.username = (user as { username?: string }).username
         token.mustChangePassword = (user as { mustChangePassword?: boolean }).mustChangePassword ?? false
+        token.name = user.name
+        token.email = user.email
+      }
+      if (trigger === "update" && session) {
+        if (typeof session.name === "string") token.name = session.name
+        if ("email" in session) token.email = (session as { email?: string | null }).email ?? null
       }
       return token
     },
@@ -164,6 +170,8 @@ export const authOptions: NextAuthOptions = {
         session.user.role = (token.role as AppRole | undefined) ?? "mahasiswa"
         session.user.username = (token.username as string | undefined) ?? undefined
         session.user.mustChangePassword = (token.mustChangePassword as boolean | undefined) ?? false
+        if (typeof token.name === "string") session.user.name = token.name
+        session.user.email = typeof token.email === "string" ? token.email : null
       }
       return session
     },

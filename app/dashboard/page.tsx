@@ -376,27 +376,32 @@ export default async function DashboardPage() {
         </div>
       </div>
 
-      <Card className="border-border/50 bg-card shadow-sm">
+      <Card className="border-border/50 bg-gradient-to-br from-card to-muted/20 shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold">Fokus Hari Ini</CardTitle>
+          <div className="flex items-center justify-between gap-2">
+            <CardTitle className="text-base font-semibold">Fokus Hari Ini</CardTitle>
+            <Badge variant="outline" className="rounded-full border-border/60 bg-background/80 text-xs">
+              Prioritas Operasional
+            </Badge>
+          </div>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          <div className="rounded-lg border border-warning/20 bg-warning/5 p-3">
+          <div className="rounded-xl border border-warning/20 bg-gradient-to-br from-warning/10 to-warning/5 p-3">
             <p className="text-xs text-muted-foreground">Peminjaman Terlambat</p>
             <p className="mt-1 text-lg font-semibold text-foreground">{counts.overdue}</p>
             <p className="mt-1 text-xs text-muted-foreground">Tindak lanjuti pengembalian yang melewati due date.</p>
           </div>
-          <div className="rounded-lg border border-border/50 bg-muted/30 p-3">
+          <div className="rounded-xl border border-border/50 bg-background/70 p-3">
             <p className="text-xs text-muted-foreground">Aktivitas Baru</p>
             <p className="mt-1 text-lg font-semibold text-foreground">{recentActivities.length}</p>
             <p className="mt-1 text-xs text-muted-foreground">Serah terima/pengembalian terbaru tercatat.</p>
           </div>
-          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+          <div className="rounded-xl border border-destructive/20 bg-gradient-to-br from-destructive/10 to-destructive/5 p-3">
             <p className="text-xs text-muted-foreground">Risiko Kerusakan</p>
             <p className="mt-1 text-lg font-semibold text-foreground">{damageSummary.currentMaintenanceAssets}</p>
             <p className="mt-1 text-xs text-muted-foreground">Asset status maintenance/damaged saat ini.</p>
           </div>
-          <div className="rounded-lg border border-border/50 bg-muted/30 p-3">
+          <div className="rounded-xl border border-border/50 bg-background/70 p-3">
             <p className="text-xs text-muted-foreground">Aktivitas Ruang</p>
             <p className="mt-1 text-lg font-semibold text-foreground">{roomActivities.length}</p>
             <p className="mt-1 text-xs text-muted-foreground">Riwayat penggunaan lab terbaru.</p>
@@ -443,16 +448,21 @@ export default async function DashboardPage() {
       <OverdueAlerts items={overdueAlerts} />
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card className="border-border/50 bg-card shadow-sm">
+        <Card className="border-border/50 bg-gradient-to-br from-card to-muted/20 shadow-sm">
           <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold">Alat Sering Dipakai (30 hari)</CardTitle>
+            <div className="flex items-center justify-between gap-2">
+              <CardTitle className="text-base font-semibold">Alat Sering Dipakai (30 hari)</CardTitle>
+              <Badge variant="outline" className="rounded-full border-border/60 bg-background/80 text-xs">
+                Top 5
+              </Badge>
+            </div>
           </CardHeader>
           <CardContent className="grid gap-3">
             {topUsedTools.length === 0 && (
               <p className="text-sm text-muted-foreground">Belum ada data penggunaan alat.</p>
             )}
             {topUsedTools.map((tool, idx) => (
-              <div key={tool.id} className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/40 px-3 py-2">
+              <div key={tool.id} className="flex items-center justify-between rounded-xl border border-border/50 bg-background/70 px-3 py-2">
                 <div>
                   <p className="text-sm font-medium text-foreground">{idx + 1}. {tool.name}</p>
                   <p className="text-xs text-muted-foreground">{tool.labName}</p>
@@ -463,21 +473,21 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/50 bg-card shadow-sm">
+        <Card className="border-border/50 bg-gradient-to-br from-card to-muted/20 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">Rekap Kerusakan & Maintenance</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="grid grid-cols-3 gap-3">
-              <div className="rounded-lg border border-border/50 bg-muted/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/70 p-3">
                 <p className="text-xs text-muted-foreground">Return perlu maintenance</p>
                 <p className="mt-1 text-lg font-bold">{damageSummary.maintenanceReturns}</p>
               </div>
-              <div className="rounded-lg border border-border/50 bg-muted/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/70 p-3">
                 <p className="text-xs text-muted-foreground">Return rusak</p>
                 <p className="mt-1 text-lg font-bold">{damageSummary.damagedReturns}</p>
               </div>
-              <div className="rounded-lg border border-border/50 bg-muted/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/70 p-3">
                 <p className="text-xs text-muted-foreground">Asset rusak/perbaikan saat ini</p>
                 <p className="mt-1 text-lg font-bold">{damageSummary.currentMaintenanceAssets}</p>
               </div>
@@ -488,7 +498,7 @@ export default async function DashboardPage() {
                 <p className="text-sm text-muted-foreground">Belum ada pengembalian rusak/maintenance.</p>
               )}
               {recentDamageEvents.map((event, idx) => (
-                <div key={`${event.toolLabel}-${idx}`} className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm">
+                <div key={`${event.toolLabel}-${idx}`} className="rounded-xl border border-border/50 bg-background/70 px-3 py-2 text-sm">
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-foreground">{event.toolLabel}</span>
                     <Badge variant="outline" className={event.condition === "damaged" ? "border-destructive/20 bg-destructive/10 text-destructive" : "border-warning/20 bg-warning/10 text-warning-foreground"}>
@@ -504,25 +514,25 @@ export default async function DashboardPage() {
       </div>
 
       <div className="grid grid-cols-1 gap-6 xl:grid-cols-2">
-        <Card className="border-border/50 bg-card shadow-sm">
+        <Card className="border-border/50 bg-gradient-to-br from-card to-muted/20 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">Ringkasan Penggunaan Bahan (30 hari)</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-4">
             <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-              <div className="rounded-lg border border-border/50 bg-muted/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/70 p-3">
                 <p className="text-xs text-muted-foreground">Stok Masuk</p>
                 <p className="mt-1 text-lg font-bold">{consumableUsageSummary.stockIn30d}</p>
               </div>
-              <div className="rounded-lg border border-border/50 bg-muted/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/70 p-3">
                 <p className="text-xs text-muted-foreground">Keluar (Peminjaman)</p>
                 <p className="mt-1 text-lg font-bold">{consumableUsageSummary.issueForBorrowing30d}</p>
               </div>
-              <div className="rounded-lg border border-border/50 bg-muted/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/70 p-3">
                 <p className="text-xs text-muted-foreground">Keluar (Permintaan)</p>
                 <p className="mt-1 text-lg font-bold">{consumableUsageSummary.issueForRequests30d}</p>
               </div>
-              <div className="rounded-lg border border-border/50 bg-muted/40 p-3">
+              <div className="rounded-xl border border-border/50 bg-background/70 p-3">
                 <p className="text-xs text-muted-foreground">Koreksi Manual</p>
                 <p className="mt-1 text-lg font-bold">{consumableUsageSummary.manualAdjust30d}</p>
               </div>
@@ -533,7 +543,7 @@ export default async function DashboardPage() {
                 <p className="text-sm text-muted-foreground">Belum ada data pemakaian bahan.</p>
               )}
               {topConsumableUsage.map((row, idx) => (
-                <div key={`${row.name}-${idx}`} className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/40 px-3 py-2">
+                <div key={`${row.name}-${idx}`} className="flex items-center justify-between rounded-xl border border-border/50 bg-background/70 px-3 py-2">
                   <div>
                     <p className="text-sm text-foreground">{idx + 1}. {row.name}</p>
                     <p className="text-xs text-muted-foreground">{row.labName}</p>
@@ -545,7 +555,7 @@ export default async function DashboardPage() {
           </CardContent>
         </Card>
 
-        <Card className="border-border/50 bg-card shadow-sm">
+        <Card className="border-border/50 bg-gradient-to-br from-card to-muted/20 shadow-sm">
           <CardHeader className="pb-3">
             <CardTitle className="text-base font-semibold">Aktivitas Penggunaan Ruang Lab</CardTitle>
           </CardHeader>
@@ -554,7 +564,7 @@ export default async function DashboardPage() {
               <p className="text-sm text-muted-foreground">Belum ada riwayat penggunaan ruang.</p>
             )}
             {roomActivities.map((activity) => (
-              <div key={activity.id} className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2">
+              <div key={activity.id} className="rounded-xl border border-border/50 bg-background/70 px-3 py-2">
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <p className="text-sm font-medium text-foreground">{activity.courseName} - {activity.groupName}</p>
                   <Badge variant="outline">{activity.studentCount} mhs</Badge>

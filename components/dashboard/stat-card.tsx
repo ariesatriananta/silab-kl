@@ -19,15 +19,15 @@ const variantStyles = {
 
 export function StatCard({ title, value, icon: Icon, trend, variant = "default" }: StatCardProps) {
   return (
-    <Card className="border-border/50 bg-card shadow-sm hover:shadow-md transition-shadow">
-      <CardContent className="flex items-center gap-4 p-5">
-        <div className={cn("flex size-12 shrink-0 items-center justify-center rounded-xl", variantStyles[variant])}>
+    <Card className="border-border/50 bg-gradient-to-br from-card to-muted/20 shadow-sm transition-shadow hover:shadow-md">
+      <CardContent className="flex items-start gap-4 p-4">
+        <div className={cn("mt-0.5 flex size-11 shrink-0 items-center justify-center rounded-xl border border-border/40", variantStyles[variant])}>
           <Icon className="size-5" />
         </div>
-        <div className="flex flex-col gap-0.5">
-          <p className="text-sm text-muted-foreground">{title}</p>
-          <p className="text-2xl font-bold tracking-tight text-card-foreground">{value}</p>
-          {trend && <p className="text-xs text-muted-foreground">{trend}</p>}
+        <div className="min-w-0 flex-1">
+          <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">{title}</p>
+          <p className="mt-1 text-2xl font-semibold tracking-tight text-card-foreground">{value}</p>
+          {trend && <p className="mt-1 line-clamp-2 text-xs text-muted-foreground">{trend}</p>}
         </div>
       </CardContent>
     </Card>

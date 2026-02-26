@@ -5,10 +5,9 @@ export function BorrowingProofPrintButton() {
     <button
       type="button"
       onClick={() => window.print()}
-      className="rounded border px-3 py-1.5 text-sm"
+      className="inline-flex items-center rounded-lg border border-border/60 bg-background px-3 py-2 text-sm font-medium shadow-sm transition-colors hover:bg-muted/40"
     >
       Cetak
     </button>
   )
 }
-

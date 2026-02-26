@@ -19,15 +19,20 @@ export type RecentActivityItem = {
 
 export function RecentActivity({ items }: { items: RecentActivityItem[] }) {
   return (
-    <Card className="border-border/50 bg-card shadow-sm">
+    <Card className="border-border/50 bg-gradient-to-br from-card to-muted/20 shadow-sm">
       <CardHeader className="pb-3">
-        <CardTitle className="text-base font-semibold text-card-foreground">Aktivitas Terbaru</CardTitle>
+        <div className="flex items-center justify-between gap-2">
+          <CardTitle className="text-base font-semibold text-card-foreground">Aktivitas Terbaru</CardTitle>
+          <Badge variant="outline" className="rounded-full border-border/60 bg-background/80 text-xs">
+            {items.length} item
+          </Badge>
+        </div>
       </CardHeader>
       <CardContent className="px-0">
         <ScrollArea className="h-[300px] px-6">
           <div className="flex flex-col gap-4">
             {items.length === 0 && (
-              <div className="py-10 text-center text-sm text-muted-foreground">
+              <div className="rounded-xl border border-border/50 bg-background/70 py-10 text-center text-sm text-muted-foreground">
                 Belum ada aktivitas terbaru.
               </div>
             )}
@@ -35,9 +40,9 @@ export function RecentActivity({ items }: { items: RecentActivityItem[] }) {
               const config = typeConfig[activity.type]
               const Icon = config.icon
               return (
-                <div key={activity.id} className="flex items-start gap-3">
-                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-secondary">
-                    <Icon className="size-4 text-muted-foreground" />
+                <div key={activity.id} className="flex items-start gap-3 rounded-xl border border-border/40 bg-background/70 p-3">
+                  <div className="mt-0.5 flex size-8 shrink-0 items-center justify-center rounded-lg bg-muted/70">
+                    <Icon className="size-4 text-foreground/80" />
                   </div>
                   <div className="flex flex-1 flex-col gap-1">
                     <div className="flex items-center justify-between gap-2">
