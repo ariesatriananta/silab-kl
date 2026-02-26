@@ -289,7 +289,7 @@ export function LabUsagePageClient({
               Tambah Jadwal
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Tambah Jadwal Lab</DialogTitle>
               <DialogDescription>
@@ -300,7 +300,7 @@ export function LabUsagePageClient({
             </DialogHeader>
             <form action={createScheduleAction} className="grid gap-3">
               {createScheduleState && (
-                <div className={`rounded-lg border px-3 py-2 text-sm ${createScheduleState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                <div className={`rounded-xl border px-3 py-2 text-sm ${createScheduleState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                   {createScheduleState.message}
                 </div>
               )}
@@ -357,10 +357,10 @@ export function LabUsagePageClient({
                   <Input id="enrolledCount" name="enrolledCount" type="number" min={0} defaultValue={0} required />
                 </div>
               </div>
-              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 Gunakan form ini untuk perencanaan jadwal. Untuk aktivitas yang sudah berlangsung, gunakan <span className="font-medium text-foreground">Catat Penggunaan Lab</span>.
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => setCreateScheduleOpen(false)}>
                   Batal
                 </Button>
@@ -379,14 +379,14 @@ export function LabUsagePageClient({
               Catat Penggunaan Lab
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Catat Riwayat Penggunaan Lab</DialogTitle>
               <DialogDescription>Digunakan setelah sesi praktikum/aktivitas lab selesai (bukan untuk membuat rencana jadwal).</DialogDescription>
             </DialogHeader>
             <form action={createUsageAction} className="grid gap-3">
               {createUsageState && (
-                <div className={`rounded-lg border px-3 py-2 text-sm ${createUsageState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                <div className={`rounded-xl border px-3 py-2 text-sm ${createUsageState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                   {createUsageState.message}
                 </div>
               )}
@@ -503,10 +503,10 @@ export function LabUsagePageClient({
                   Jika diisi, jumlah baris harus sama dengan jumlah mahasiswa.
                 </p>
               </div>
-              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 Tips cepat: pilih <span className="font-medium text-foreground">Link Jadwal</span> untuk auto-fill data sesi, lalu lengkapi absensi jika tersedia.
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => setCreateUsageOpen(false)}>
                   Batal
                 </Button>
@@ -530,7 +530,7 @@ export function LabUsagePageClient({
         </TabsList>
 
         <TabsContent value="schedule" className="mt-0">
-          <div className="mb-4 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <div className="mb-4 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             Fokus tab ini: perencanaan dan pengelolaan jadwal lab (create/edit/hapus jadwal).
           </div>
           {schedules.length === 0 ? (
@@ -622,7 +622,7 @@ export function LabUsagePageClient({
         </TabsContent>
 
         <TabsContent value="history" className="mt-0">
-          <div className="mb-4 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <div className="mb-4 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             Fokus tab ini: pencatatan penggunaan aktual dan peninjauan absensi per sesi.
           </div>
           <Card className="border-border/50 bg-card shadow-sm">
@@ -637,7 +637,7 @@ export function LabUsagePageClient({
                 <Table className="min-w-[980px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">
-                      <TableHead className="font-semibold">ID</TableHead>
+                      <TableHead className="font-semibold">ID Riwayat</TableHead>
                       <TableHead className="font-semibold">Laboratorium</TableHead>
                       <TableHead className="font-semibold">Tanggal</TableHead>
                       <TableHead className="font-semibold">Mata Kuliah</TableHead>
@@ -698,7 +698,7 @@ export function LabUsagePageClient({
       </Tabs>
 
       <Dialog open={!!editingSchedule} onOpenChange={(open) => !open && setEditingSchedule(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Jadwal Lab</DialogTitle>
             <DialogDescription>Perbarui detail jadwal laboratorium.</DialogDescription>
@@ -706,7 +706,7 @@ export function LabUsagePageClient({
           {editingSchedule && (
             <form action={updateScheduleAction} className="grid gap-3">
               {updateScheduleState && (
-                <div className={`rounded-lg border px-3 py-2 text-sm ${updateScheduleState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                <div className={`rounded-xl border px-3 py-2 text-sm ${updateScheduleState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                   {updateScheduleState.message}
                 </div>
               )}
@@ -764,7 +764,7 @@ export function LabUsagePageClient({
                   <Input name="enrolledCount" type="number" min={0} defaultValue={editingSchedule.enrolledCount} required />
                 </div>
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => setEditingSchedule(null)}>
                   Batal
                 </Button>
@@ -778,7 +778,7 @@ export function LabUsagePageClient({
       </Dialog>
 
       <Dialog open={!!deletingSchedule} onOpenChange={(open) => !open && setDeletingSchedule(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Hapus Jadwal Lab</DialogTitle>
             <DialogDescription>
@@ -789,12 +789,21 @@ export function LabUsagePageClient({
           </DialogHeader>
           <form action={deleteScheduleAction} className="grid gap-3">
             {deleteScheduleState && (
-              <div className={`rounded-lg border px-3 py-2 text-sm ${deleteScheduleState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+              <div className={`rounded-xl border px-3 py-2 text-sm ${deleteScheduleState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                 {deleteScheduleState.message}
               </div>
             )}
             <input type="hidden" name="scheduleId" value={deletingSchedule?.id ?? ""} />
-            <div className="flex justify-end gap-2">
+            {deletingSchedule && (
+              <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-2 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">{deletingSchedule.courseName} - {deletingSchedule.groupName}</p>
+                <p className="mt-1">
+                  {deletingSchedule.labName} • {deletingSchedule.scheduledDate} • {deletingSchedule.startTime} - {deletingSchedule.endTime}
+                </p>
+                <p className="mt-2 text-xs">Tindakan ini bersifat permanen dan tidak dapat dibatalkan.</p>
+              </div>
+            )}
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => setDeletingSchedule(null)}>
                 Batal
               </Button>
@@ -807,7 +816,7 @@ export function LabUsagePageClient({
       </Dialog>
 
       <Dialog open={!!selectedHistory} onOpenChange={(open) => !open && setSelectedHistory(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Riwayat Penggunaan Lab</DialogTitle>
             <DialogDescription>
@@ -816,13 +825,21 @@ export function LabUsagePageClient({
           </DialogHeader>
           {selectedHistory && (
             <div className="grid gap-4">
-              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+              <div className="rounded-xl border border-border/50 bg-muted/10 p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">Ringkasan Sesi</p>
+                  <span className="rounded-full border border-border/50 bg-background px-2 py-0.5 text-[11px] text-muted-foreground">
+                    Riwayat Penggunaan
+                  </span>
+                </div>
+                <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
                 <div><p className="text-muted-foreground">Laboratorium</p><p>{selectedHistory.labName}</p></div>
                 <div><p className="text-muted-foreground">Tanggal</p><p>{selectedHistory.date}</p></div>
                 <div><p className="text-muted-foreground">Jam</p><p>{selectedHistory.startTime} - {selectedHistory.endTime}</p></div>
                 <div><p className="text-muted-foreground">Durasi</p><p>{selectedHistory.durationLabel}</p></div>
                 <div><p className="text-muted-foreground">Kelompok</p><p>{selectedHistory.groupName}</p></div>
                 <div><p className="text-muted-foreground">Jumlah Mhs</p><p>{selectedHistory.studentCount}</p></div>
+              </div>
               </div>
               <div>
                 <p className="mb-2 text-sm font-medium text-foreground">Daftar Hadir</p>
@@ -842,7 +859,7 @@ export function LabUsagePageClient({
                 </div>
               </div>
               <div className="flex justify-end">
-                <Button variant="outline" onClick={() => setSelectedHistory(null)}>Tutup</Button>
+                <Button type="button" variant="outline" onClick={() => setSelectedHistory(null)}>Tutup</Button>
               </div>
             </div>
           )}

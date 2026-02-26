@@ -298,7 +298,7 @@ export function ToolsPageClient({
 
       <Card className="border-border/50 bg-card shadow-sm">
         <CardContent className="p-4">
-          <div className="mb-3 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <div className="mb-3 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             Fokus halaman ini: cari unit alat, cek status/kondisi, lalu lakukan edit/QR cetak jika diperlukan.
           </div>
           <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
@@ -384,7 +384,7 @@ export function ToolsPageClient({
                     </p>
                   </div>
 
-                  <div className="flex justify-end gap-2">
+                  <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                     <Button type="button" variant="outline" onClick={() => setShowAdd(false)}>Batal</Button>
                     <Button type="submit" disabled={createPending}>{createPending ? "Menyimpan..." : "Simpan"}</Button>
                   </div>
@@ -480,7 +480,7 @@ export function ToolsPageClient({
           if (!showDetail) setQrPreviewDataUrl(null)
         }
       }}>
-        <DialogContent className="max-w-md border-border/60 bg-card/95 shadow-xl">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto border-border/60 bg-card/95 shadow-xl">
           <DialogHeader>
             <DialogTitle>QR Code Alat</DialogTitle>
             <DialogDescription>Fokus QR cetak untuk identifikasi unit (scanner belum diaktifkan).</DialogDescription>
@@ -636,7 +636,7 @@ export function ToolsPageClient({
                 </div>
               </div>
 
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => setShowDetail(null)}>Tutup</Button>
                 {canManage && (
                   <Button
@@ -790,7 +790,7 @@ export function ToolsPageClient({
       </Dialog>
 
       <Dialog open={!!deactivating} onOpenChange={(o) => !o && setDeactivating(null)}>
-        <DialogContent className="max-w-md border-border/60 bg-card/95 shadow-xl">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto border-border/60 bg-card/95 shadow-xl">
           <DialogHeader><DialogTitle>Nonaktifkan Unit Alat</DialogTitle><DialogDescription>Unit akan disembunyikan dari listing aktif.</DialogDescription></DialogHeader>
           <form action={deactivateAction} className="grid gap-3">
             {deactivateState && <p className={`rounded border px-3 py-2 text-sm ${deactivateState.ok ? "border-success/20 bg-success/5" : "border-destructive/20 bg-destructive/5"}`}>{deactivateState.message}</p>}
@@ -798,7 +798,7 @@ export function ToolsPageClient({
             <div className="rounded-lg border border-border/50 bg-muted/10 px-3 py-2 text-sm text-muted-foreground">
               Proteksi aktif: unit tidak bisa dinonaktifkan jika sedang dipinjam atau sudah pernah direferensikan transaksi.
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => setDeactivating(null)}>Batal</Button>
               <Button type="submit" variant="destructive" disabled={deactivatePending || !deactivating}>{deactivatePending ? "Memproses..." : "Nonaktifkan"}</Button>
             </div>

@@ -72,7 +72,7 @@ export function HeaderUserMenu() {
         <DropdownMenuItem asChild>
           <Link href="/dashboard/account/profile">
             <UserCircle2 className="size-4" />
-            My Profile
+            Profil Saya
           </Link>
         </DropdownMenuItem>
         <DropdownMenuItem asChild>
@@ -88,7 +88,7 @@ export function HeaderUserMenu() {
           onClick={() => signOut({ callbackUrl: "/" })}
         >
           <LogOut className="size-4" />
-          Logout
+          Keluar
         </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>

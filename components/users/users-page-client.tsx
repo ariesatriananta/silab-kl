@@ -89,7 +89,7 @@ const roleBadgeClass: Record<UserManagementRow["role"], string> = {
 const auditActionLabel: Record<string, string> = {
   create_user: "Buat User",
   update_user: "Ubah User",
-  reset_user_password: "Reset Password User",
+  reset_user_password: "Reset Password Pengguna",
 }
 
 function UserFormFields({
@@ -174,7 +174,7 @@ function UserFormFields({
         </div>
       )}
 
-      <div className="flex items-center justify-between rounded-lg border border-border/50 bg-muted/20 px-3 py-2">
+      <div className="flex items-center justify-between rounded-xl border border-border/50 bg-muted/30 px-3 py-2">
         <div>
           <p className="text-sm font-medium text-foreground">User Aktif</p>
           <p className="text-xs text-muted-foreground">User nonaktif tidak bisa login ke sistem.</p>
@@ -188,7 +188,7 @@ function UserFormFields({
       {role === "petugas_plp" && (
         <div className="grid gap-2">
           <Label>Assignment Laboratorium (minimal 1)</Label>
-          <div className="grid gap-2 rounded-lg border border-border/50 bg-muted/20 p-3 sm:grid-cols-2">
+          <div className="grid gap-2 rounded-xl border border-border/50 bg-muted/30 p-3 sm:grid-cols-2">
             {labs.map((lab) => {
               const checked = assignmentLabIds.includes(lab.id)
               return (
@@ -377,14 +377,14 @@ export function UsersPageClient({
                 Tambah User
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-3xl">
+            <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Tambah User</DialogTitle>
                 <DialogDescription>Buat akun baru dan atur role serta assignment lab jika diperlukan.</DialogDescription>
               </DialogHeader>
               <form action={createAction} className="grid gap-4">
                 {createState && (
-                  <div className={`rounded-lg border px-3 py-2 text-sm ${createState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                  <div className={`rounded-xl border px-3 py-2 text-sm ${createState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                     {createState.message}
                   </div>
                 )}
@@ -404,12 +404,12 @@ export function UsersPageClient({
                     setActive={setCreateActive}
                   />
                 </div>
-                <div className="flex justify-end gap-2">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={createPending}>
                     Batal
                   </Button>
                   <Button type="submit" disabled={createPending}>
-                    {createPending ? "Menyimpan..." : "Simpan User"}
+                    {createPending ? "Menyimpan..." : "Simpan Pengguna"}
                   </Button>
                 </div>
               </form>
@@ -419,16 +419,16 @@ export function UsersPageClient({
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total User</p><p className="mt-1 text-lg font-semibold">{summary.total}</p></CardContent></Card>
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">User Aktif</p><p className="mt-1 text-lg font-semibold">{summary.active}</p></CardContent></Card>
+        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Pengguna</p><p className="mt-1 text-lg font-semibold">{summary.total}</p></CardContent></Card>
+        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Pengguna Aktif</p><p className="mt-1 text-lg font-semibold">{summary.active}</p></CardContent></Card>
         <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Petugas PLP</p><p className="mt-1 text-lg font-semibold">{summary.plp}</p></CardContent></Card>
         <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Mahasiswa</p><p className="mt-1 text-lg font-semibold">{summary.mahasiswa}</p></CardContent></Card>
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "users" | "audit")} className="flex flex-col gap-4">
         <TabsList className="grid w-full grid-cols-2 rounded-xl bg-muted/50 p-1 sm:w-auto">
-          <TabsTrigger value="users" className="rounded-lg">Daftar User</TabsTrigger>
-          <TabsTrigger value="audit" className="rounded-lg">Audit User</TabsTrigger>
+          <TabsTrigger value="users" className="rounded-lg">Daftar Pengguna</TabsTrigger>
+          <TabsTrigger value="audit" className="rounded-lg">Audit Pengguna</TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="mt-0 space-y-4">
@@ -437,13 +437,13 @@ export function UsersPageClient({
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Fokus Halaman</p>
                 <p className="mt-1 text-sm text-foreground">
-                  Gunakan tab ini untuk mengelola akun user dan assignment lab Petugas PLP.
+                  Gunakan tab ini untuk mengelola akun pengguna dan assignment lab Petugas PLP.
                 </p>
               </div>
               <div>
                 <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">Catatan Operasional</p>
                 <p className="mt-1 text-sm text-muted-foreground">
-                  Reset password ke <span className="font-medium text-foreground">password</span> akan memaksa user ganti password saat login.
+                  Reset password ke <span className="font-medium text-foreground">password</span> akan memaksa pengguna ganti password saat login.
                 </p>
               </div>
             </CardContent>
@@ -451,7 +451,7 @@ export function UsersPageClient({
 
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Filter & Urutan User</CardTitle>
+              <CardTitle className="text-base font-semibold">Filter & Urutan Pengguna</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -472,7 +472,7 @@ export function UsersPageClient({
                   }}
                 >
                   <SelectTrigger className="w-full sm:w-56">
-                    <SelectValue placeholder="Filter role" />
+                    <SelectValue placeholder="Filter role user" />
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="all">Semua Role</SelectItem>
@@ -510,7 +510,7 @@ export function UsersPageClient({
                 </Button>
               </div>
               <p className="text-xs text-muted-foreground">
-                Gunakan halaman ini untuk mengatur akses user dan assignment lab Petugas PLP. Assignment dipakai oleh semua modul operasional.
+                Gunakan halaman ini untuk mengatur akses pengguna dan assignment lab Petugas PLP. Assignment dipakai oleh semua modul operasional.
               </p>
             </CardContent>
           </Card>
@@ -518,7 +518,7 @@ export function UsersPageClient({
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold">
-                Daftar User ({filtered.length}) {filtered.length > pageSize ? `- Halaman ${currentPage}/${totalPages}` : ""}
+                Daftar Pengguna ({filtered.length}) {filtered.length > pageSize ? `- Halaman ${currentPage}/${totalPages}` : ""}
               </CardTitle>
             </CardHeader>
             <CardContent className="px-0">
@@ -546,13 +546,13 @@ export function UsersPageClient({
                       <Empty className="border border-border/50 bg-muted/20 py-8">
                         <EmptyHeader>
                           <EmptyMedia variant="icon"><Users className="size-5" /></EmptyMedia>
-                          <EmptyTitle className="text-base">User tidak ditemukan</EmptyTitle>
-                          <EmptyDescription>Ubah filter pencarian atau tambahkan user baru.</EmptyDescription>
+                          <EmptyTitle className="text-base">Pengguna tidak ditemukan</EmptyTitle>
+                          <EmptyDescription>Ubah filter pencarian atau tambahkan pengguna baru.</EmptyDescription>
                         </EmptyHeader>
                         <EmptyContent>
                           <Button size="sm" onClick={() => setCreateOpen(true)}>
                             <Plus className="size-4" />
-                            Tambah User
+                            Tambah Pengguna
                           </Button>
                         </EmptyContent>
                       </Empty>
@@ -622,7 +622,7 @@ export function UsersPageClient({
               <div className="flex flex-col gap-3 border-t border-border/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-muted-foreground">
                   Menampilkan {filtered.length === 0 ? 0 : (currentPage - 1) * pageSize + 1}-
-                  {Math.min(currentPage * pageSize, filtered.length)} dari {filtered.length} user
+                  {Math.min(currentPage * pageSize, filtered.length)} dari {filtered.length} pengguna
                 </p>
                 <div className="flex items-center gap-2">
                   <Button type="button" variant="outline" size="sm" disabled={currentPage <= 1} onClick={() => setPage((p) => Math.max(1, p - 1))}>
@@ -643,7 +643,7 @@ export function UsersPageClient({
         <TabsContent value="audit" className="mt-0">
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Filter Audit User</CardTitle>
+              <CardTitle className="text-base font-semibold">Filter Audit Pengguna</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-col gap-3">
               <div className="flex flex-col gap-3 sm:flex-row sm:flex-wrap">
@@ -661,7 +661,7 @@ export function UsersPageClient({
                     <SelectItem value="all">Semua Aksi</SelectItem>
                     <SelectItem value="create_user">Buat User</SelectItem>
                     <SelectItem value="update_user">Ubah User</SelectItem>
-                    <SelectItem value="reset_user_password">Reset Password User</SelectItem>
+                    <SelectItem value="reset_user_password">Reset Password Pengguna</SelectItem>
                   </SelectContent>
                 </Select>
                 <Select value={auditOutcomeFilter} onValueChange={(v) => setAuditOutcomeFilter(v as typeof auditOutcomeFilter)}>
@@ -684,11 +684,11 @@ export function UsersPageClient({
 
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Riwayat Audit User ({filteredAuditRows.length})</CardTitle>
+              <CardTitle className="text-base font-semibold">Riwayat Audit Pengguna ({filteredAuditRows.length})</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
               <div className="px-6 pb-2 text-xs text-muted-foreground">
-                Menampilkan log perubahan user, reset password, dan aksi manajemen user terbaru. Geser tabel ke samping pada layar kecil untuk melihat kolom target/detail.
+                Menampilkan log perubahan pengguna, reset password, dan aksi manajemen akun terbaru. Geser tabel ke samping pada layar kecil untuk melihat kolom target/detail.
               </div>
               <div className="overflow-x-auto">
                 <Table className="min-w-[1100px]">
@@ -712,9 +712,9 @@ export function UsersPageClient({
                               <EmptyMedia variant="icon">
                                 <ShieldCheck className="size-5" />
                               </EmptyMedia>
-                              <EmptyTitle className="text-base">Belum ada audit user</EmptyTitle>
+                              <EmptyTitle className="text-base">Belum ada audit pengguna</EmptyTitle>
                               <EmptyDescription>
-                                Riwayat akan muncul setelah ada aksi pembuatan, perubahan, atau reset password user.
+                                Riwayat akan muncul setelah ada aksi pembuatan, perubahan, atau reset password pengguna.
                               </EmptyDescription>
                             </EmptyHeader>
                           </Empty>
@@ -759,7 +759,7 @@ export function UsersPageClient({
       </Tabs>
 
       <Dialog open={!!selectedUser} onOpenChange={(open) => !open && setSelectedUser(null)}>
-        <DialogContent className="max-w-3xl">
+        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Kelola User</DialogTitle>
             <DialogDescription>
@@ -769,7 +769,7 @@ export function UsersPageClient({
           {selectedUser && (
             <form key={selectedUser.id} action={updateAction} className="grid gap-4">
               {updateState && (
-                <div className={`rounded-lg border px-3 py-2 text-sm ${updateState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                <div className={`rounded-xl border px-3 py-2 text-sm ${updateState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                   {updateState.message}
                 </div>
               )}
@@ -791,7 +791,7 @@ export function UsersPageClient({
                   defaultValues={selectedUser}
                 />
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => setSelectedUser(null)} disabled={updatePending}>
                   Tutup
                 </Button>
@@ -805,28 +805,33 @@ export function UsersPageClient({
       </Dialog>
 
       <Dialog open={!!resetPasswordUser} onOpenChange={(open) => !open && setResetPasswordUser(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Reset Password User</DialogTitle>
+            <DialogTitle>Reset Password Pengguna</DialogTitle>
             <DialogDescription>
               {resetPasswordUser
                 ? `Atur password baru untuk ${resetPasswordUser.fullName} (${resetPasswordUser.username}).`
-                : "Reset password user"}
+                : "Reset password pengguna"}
             </DialogDescription>
           </DialogHeader>
           {resetPasswordUser && (
             <form action={resetAction} className="grid gap-3">
               {resetState && (
-                <div className={`rounded-lg border px-3 py-2 text-sm ${resetState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                <div className={`rounded-xl border px-3 py-2 text-sm ${resetState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                   {resetState.message}
                 </div>
               )}
               <input type="hidden" name="userId" value={resetPasswordUser.id} />
+              <div className="rounded-xl border border-border/50 bg-muted/10 px-3 py-2 text-sm">
+                <p className="text-xs text-muted-foreground">Target Pengguna</p>
+                <p className="font-medium text-foreground">{resetPasswordUser.fullName}</p>
+                <p className="font-mono text-xs text-muted-foreground">{resetPasswordUser.username}</p>
+              </div>
               <div className="rounded-xl border border-warning/20 bg-warning/5 px-3 py-2 text-sm text-muted-foreground">
                 <div className="flex items-start gap-2">
                   <ShieldAlert className="mt-0.5 size-4 shrink-0 text-warning-foreground" />
                   <p>
-                    Reset password akan mengganti kredensial user secara langsung. Informasikan password baru ke user melalui kanal yang aman.
+                    Reset password akan mengganti kredensial pengguna secara langsung. Informasikan password baru melalui kanal yang aman.
                   </p>
                 </div>
               </div>
@@ -842,10 +847,10 @@ export function UsersPageClient({
                   required
                 />
                 <p className="text-xs text-muted-foreground">
-                  Gunakan `password` untuk memaksa user ganti password saat login pertama berikutnya.
+                  Gunakan `password` untuk memaksa pengguna ganti password saat login pertama berikutnya.
                 </p>
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => setResetPasswordUser(null)} disabled={resetPending}>
                   Batal
                 </Button>
@@ -859,23 +864,25 @@ export function UsersPageClient({
       </Dialog>
 
       <Dialog open={!!selectedAudit} onOpenChange={(open) => !open && setSelectedAudit(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
-            <DialogTitle>Detail Audit User</DialogTitle>
+            <DialogTitle>Detail Audit Pengguna</DialogTitle>
             <DialogDescription>
               {selectedAudit ? `${auditActionLabel[selectedAudit.action] ?? selectedAudit.action} - ${selectedAudit.createdAt}` : "Detail audit"}
             </DialogDescription>
           </DialogHeader>
           {selectedAudit && (
             <div className="grid gap-4">
-              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                <div><p className="text-muted-foreground">Waktu</p><p className="text-foreground">{selectedAudit.createdAt}</p></div>
-                <div>
-                  <p className="text-muted-foreground">Hasil</p>
+              <div className="rounded-xl border border-border/50 bg-muted/10 p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">Ringkasan Audit</p>
                   <Badge variant="outline" className={auditOutcomeBadgeClass[selectedAudit.outcome]}>
                     {selectedAudit.outcome === "success" ? "Sukses" : selectedAudit.outcome === "failure" ? "Gagal" : "Diblokir"}
                   </Badge>
                 </div>
+                <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                <div><p className="text-muted-foreground">Waktu</p><p className="text-foreground">{selectedAudit.createdAt}</p></div>
+                <div><p className="text-muted-foreground">Hasil</p><p className="text-foreground">{selectedAudit.outcome === "success" ? "Sukses" : selectedAudit.outcome === "failure" ? "Gagal" : "Diblokir"}</p></div>
                 <div><p className="text-muted-foreground">Aktor</p><p className="text-foreground">{selectedAudit.actorLabel}</p></div>
                 <div>
                   <p className="text-muted-foreground">Aksi</p>
@@ -884,6 +891,7 @@ export function UsersPageClient({
                 </div>
                 <div><p className="text-muted-foreground">Identifier</p><p className="font-mono text-xs text-foreground">{selectedAudit.identifier ?? "-"}</p></div>
                 <div><p className="text-muted-foreground">Target</p><p className="font-mono text-xs text-foreground">{selectedAudit.targetType ?? "-"} / {selectedAudit.targetId ?? "-"}</p></div>
+              </div>
               </div>
               <div>
                 <p className="mb-2 text-sm font-medium text-foreground">Metadata (JSON)</p>

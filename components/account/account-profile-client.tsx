@@ -41,7 +41,7 @@ export function AccountProfileClient({
     seenToastKeys.current.push(key)
 
     toast({
-      title: "My Profile",
+      title: "Profil Saya",
       description: state.message,
       variant: state.ok ? "default" : "destructive",
     })
@@ -59,7 +59,7 @@ export function AccountProfileClient({
       <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-card via-card to-muted/30 p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
-            <h1 className="text-xl font-semibold text-foreground">My Profile</h1>
+            <h1 className="text-xl font-semibold text-foreground">Profil Saya</h1>
             <p className="mt-1 text-sm text-muted-foreground">
               Kelola informasi profil yang ditampilkan di aplikasi. Perubahan nama dan email akan langsung dipakai di header akun.
             </p>

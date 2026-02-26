@@ -384,7 +384,7 @@ export function ConsumablesPageClient({
           >
             <p className="text-xs text-muted-foreground">Permintaan Butuh Tindakan</p>
             <p className="mt-1 text-lg font-semibold text-foreground">{requestSummary.needsAction}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Pending approval / siap dipenuhi</p>
+            <p className="mt-1 text-xs text-muted-foreground">Menunggu persetujuan / siap dipenuhi</p>
           </button>
           <button
             type="button"
@@ -403,7 +403,7 @@ export function ConsumablesPageClient({
             }}
             className="rounded-lg border border-border/50 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
           >
-            <p className="text-xs text-muted-foreground">Permintaan Pending</p>
+            <p className="text-xs text-muted-foreground">Permintaan Menunggu</p>
             <p className="mt-1 text-lg font-semibold text-foreground">{requestSummary.pending}</p>
             <p className="mt-1 text-xs text-muted-foreground">Belum diproses</p>
           </button>
@@ -428,14 +428,14 @@ export function ConsumablesPageClient({
                 Tambah Master Bahan
               </Button>
             </DialogTrigger>
-            <DialogContent className="max-w-2xl">
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Tambah Master Bahan</DialogTitle>
                 <DialogDescription>Tambahkan bahan baru, stok awal, dan stok minimum.</DialogDescription>
               </DialogHeader>
               <form action={createMasterAction} className="grid gap-3">
                 {createMasterState && (
-                  <div className={`rounded-lg border px-3 py-2 text-sm ${createMasterState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                  <div className={`rounded-xl border px-3 py-2 text-sm ${createMasterState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                     {createMasterState.message}
                   </div>
                 )}
@@ -478,7 +478,7 @@ export function ConsumablesPageClient({
                     <Input id="masterMinStock" name="minStockQty" type="number" min={0} defaultValue={0} required />
                   </div>
                 </div>
-                <div className="flex justify-end gap-2">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Button type="button" variant="outline" onClick={() => setCreateMasterOpen(false)}>Batal</Button>
                   <Button type="submit" disabled={createMasterPending}>
                     {createMasterPending ? "Menyimpan..." : "Simpan Bahan"}
@@ -496,7 +496,7 @@ export function ConsumablesPageClient({
               Buat Permintaan Bahan
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-2xl">
+          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Buat Permintaan Bahan</DialogTitle>
               <DialogDescription>
@@ -505,7 +505,7 @@ export function ConsumablesPageClient({
             </DialogHeader>
             <form action={createAction} className="grid gap-4">
               {createState && (
-                <div className={`rounded-lg border px-3 py-2 text-sm ${createState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                <div className={`rounded-xl border px-3 py-2 text-sm ${createState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                   {createState.message}
                 </div>
               )}
@@ -554,7 +554,7 @@ export function ConsumablesPageClient({
                 />
               </div>
               <input type="hidden" name="itemsPayload" value={itemsPayload} />
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
                   Batal
                 </Button>
@@ -572,14 +572,14 @@ export function ConsumablesPageClient({
         onValueChange={(v) => setActiveTab(v as "stock" | "requests" | "movements")}
         className="flex flex-col gap-4"
       >
-        <TabsList className="grid w-full grid-cols-3 rounded-xl bg-muted/50 p-1 sm:w-auto">
-          <TabsTrigger value="stock" className="rounded-lg">Stok Aktif</TabsTrigger>
-          <TabsTrigger value="requests" className="rounded-lg">Permintaan Bahan</TabsTrigger>
-          <TabsTrigger value="movements" className="rounded-lg">Histori Stok</TabsTrigger>
+        <TabsList className="grid w-full grid-cols-3 rounded-xl bg-muted/50 p-1 md:w-auto">
+          <TabsTrigger value="stock" className="rounded-lg px-2 text-xs sm:text-sm">Stok Aktif</TabsTrigger>
+          <TabsTrigger value="requests" className="rounded-lg px-2 text-xs sm:text-sm">Permintaan Bahan</TabsTrigger>
+          <TabsTrigger value="movements" className="rounded-lg px-2 text-xs sm:text-sm">Histori Stok</TabsTrigger>
         </TabsList>
 
         <TabsContent value="stock" className="mt-0 flex flex-col gap-4">
-          <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             Fokus tab ini: cek stok aktif, stok minimum, lalu lakukan <span className="font-medium text-foreground">Stok Masuk</span> atau <span className="font-medium text-foreground">Edit Master</span>.
           </div>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -652,7 +652,7 @@ export function ConsumablesPageClient({
         </TabsContent>
 
         <TabsContent value="requests" className="mt-0">
-          <div className="mb-4 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <div className="mb-4 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             Fokus tab ini: proses workflow permintaan bahan (approve/reject/fulfill). Gunakan filter cepat untuk mengurangi kepadatan tabel.
           </div>
           <Card className="mb-4 border-border/50 bg-card shadow-sm">
@@ -670,7 +670,7 @@ export function ConsumablesPageClient({
                   Butuh Tindakan ({requestSummary.needsAction})
                 </Button>
                 <Button type="button" size="sm" variant={requestStatusFilter === "pending" ? "default" : "outline"} onClick={() => setRequestStatusFilter("pending")}>
-                  Pending ({requestSummary.pending})
+                  Menunggu ({requestSummary.pending})
                 </Button>
                 <Button type="button" size="sm" variant={requestStatusFilter === "approved" ? "default" : "outline"} onClick={() => setRequestStatusFilter("approved")}>
                   Disetujui ({requestSummary.approved})
@@ -699,7 +699,7 @@ export function ConsumablesPageClient({
                 <Table className="min-w-[980px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">
-                      <TableHead className="font-semibold">ID</TableHead>
+                      <TableHead className="font-semibold">Kode</TableHead>
                       <TableHead className="font-semibold">Pemohon</TableHead>
                       <TableHead className="font-semibold">Lab</TableHead>
                       <TableHead className="font-semibold">Item</TableHead>
@@ -797,7 +797,7 @@ export function ConsumablesPageClient({
         </TabsContent>
 
         <TabsContent value="movements" className="mt-0">
-          <div className="mb-4 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+          <div className="mb-4 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             Fokus tab ini: audit pergerakan stok (masuk, pengeluaran, koreksi). Gunakan untuk telusur perubahan stok.
           </div>
           <Card className="border-border/50 bg-card shadow-sm">
@@ -872,7 +872,7 @@ export function ConsumablesPageClient({
       </Tabs>
 
       <Dialog open={!!processingRequest} onOpenChange={(open) => !open && setProcessingRequest(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>
               {processActionType === "approve" && "Setujui Permintaan Bahan"}
@@ -887,7 +887,7 @@ export function ConsumablesPageClient({
           </DialogHeader>
           {processingRequest && (
             <>
-              <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                 {processingRequest.items}
                 {processingRequest.note ? ` | Catatan: ${processingRequest.note}` : ""}
               </div>
@@ -905,7 +905,7 @@ export function ConsumablesPageClient({
                   (processActionType === "reject" && rejectState) ||
                   (processActionType === "fulfill" && fulfillState)) && (
                   <div
-                    className={`rounded-lg border px-3 py-2 text-sm ${
+                    className={`rounded-xl border px-3 py-2 text-sm ${
                       (
                         processActionType === "approve"
                           ? approveState
@@ -944,7 +944,7 @@ export function ConsumablesPageClient({
                     }
                   />
                 </div>
-                <div className="flex justify-end gap-2">
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                   <Button type="button" variant="outline" onClick={() => setProcessingRequest(null)}>
                     Batal
                   </Button>
@@ -969,7 +969,7 @@ export function ConsumablesPageClient({
       </Dialog>
 
       <Dialog open={!!selectedRequest} onOpenChange={(open) => !open && setSelectedRequest(null)}>
-        <DialogContent className="max-w-xl">
+        <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Permintaan Bahan</DialogTitle>
             <DialogDescription>
@@ -978,28 +978,30 @@ export function ConsumablesPageClient({
           </DialogHeader>
           {selectedRequest && (
             <div className="grid gap-4">
-              <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
-                <div>
-                  <p className="text-muted-foreground">Kode</p>
-                  <p className="font-mono text-foreground">{selectedRequest.code}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Status</p>
+              <div className="rounded-xl border border-border/50 bg-muted/10 p-4">
+                <div className="mb-3 flex items-center justify-between gap-2">
+                  <p className="text-sm font-semibold text-foreground">Ringkasan Permintaan</p>
                   <Badge variant="outline" className={requestStatusConfig[selectedRequest.status].className}>
                     {requestStatusConfig[selectedRequest.status].label}
                   </Badge>
                 </div>
-                <div>
-                  <p className="text-muted-foreground">Pemohon</p>
-                  <p className="text-foreground">{selectedRequest.requestor}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Laboratorium</p>
-                  <p className="text-foreground">{selectedRequest.lab}</p>
-                </div>
-                <div>
-                  <p className="text-muted-foreground">Tanggal</p>
-                  <p className="text-foreground">{selectedRequest.date}</p>
+                <div className="grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
+                  <div>
+                    <p className="text-muted-foreground">Kode</p>
+                    <p className="font-mono text-foreground">{selectedRequest.code}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Tanggal</p>
+                    <p className="text-foreground">{selectedRequest.date}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Pemohon</p>
+                    <p className="text-foreground">{selectedRequest.requestor}</p>
+                  </div>
+                  <div>
+                    <p className="text-muted-foreground">Laboratorium</p>
+                    <p className="text-foreground">{selectedRequest.lab}</p>
+                  </div>
                 </div>
               </div>
               <div>
@@ -1034,13 +1036,13 @@ export function ConsumablesPageClient({
               {selectedRequest.note && (
                 <div>
                   <p className="mb-1 text-sm text-muted-foreground">Catatan</p>
-                  <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-foreground">
+                  <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-foreground">
                     {selectedRequest.note}
                   </div>
                 </div>
               )}
               <div className="flex justify-end">
-                <Button variant="outline" onClick={() => setSelectedRequest(null)}>
+                <Button type="button" variant="outline" onClick={() => setSelectedRequest(null)}>
                   Tutup
                 </Button>
               </div>
@@ -1050,7 +1052,7 @@ export function ConsumablesPageClient({
       </Dialog>
 
       <Dialog open={!!editingConsumable} onOpenChange={(open) => !open && setEditingConsumable(null)}>
-        <DialogContent className="max-w-2xl">
+        <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Edit Master Bahan</DialogTitle>
             <DialogDescription>Koreksi stok, ubah stok minimum, atau edit data master bahan.</DialogDescription>
@@ -1058,7 +1060,7 @@ export function ConsumablesPageClient({
           {editingConsumable && (
             <form action={updateMasterAction} className="grid gap-3">
               {updateMasterState && (
-                <div className={`rounded-lg border px-3 py-2 text-sm ${updateMasterState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                <div className={`rounded-xl border px-3 py-2 text-sm ${updateMasterState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                   {updateMasterState.message}
                 </div>
               )}
@@ -1102,7 +1104,7 @@ export function ConsumablesPageClient({
                   <Input name="minStockQty" type="number" min={0} defaultValue={editingConsumable.minStock} required />
                 </div>
               </div>
-              <div className="flex justify-end gap-2">
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => setEditingConsumable(null)}>Batal</Button>
                 <Button type="submit" disabled={updateMasterPending}>
                   {updateMasterPending ? "Menyimpan..." : "Simpan Perubahan"}
@@ -1114,7 +1116,7 @@ export function ConsumablesPageClient({
       </Dialog>
 
       <Dialog open={!!deactivatingConsumable} onOpenChange={(open) => !open && setDeactivatingConsumable(null)}>
-        <DialogContent className="max-w-md">
+        <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Nonaktifkan Master Bahan</DialogTitle>
             <DialogDescription>
@@ -1125,15 +1127,16 @@ export function ConsumablesPageClient({
           </DialogHeader>
           <form action={deactivateMasterAction} className="grid gap-3">
             {deactivateMasterState && (
-              <div className={`rounded-lg border px-3 py-2 text-sm ${deactivateMasterState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+              <div className={`rounded-xl border px-3 py-2 text-sm ${deactivateMasterState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                 {deactivateMasterState.message}
               </div>
             )}
             <input type="hidden" name="consumableId" value={deactivatingConsumable?.id ?? ""} />
-            <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-              Proteksi aktif: bahan tidak dapat dinonaktifkan jika sudah pernah direferensikan transaksi/permintaan.
+            <div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+              <p className="font-medium text-foreground">Proteksi Integritas Data</p>
+              <p className="mt-1">Bahan tidak dapat dinonaktifkan jika sudah pernah direferensikan transaksi/permintaan.</p>
             </div>
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => setDeactivatingConsumable(null)}>
                 Batal
               </Button>
@@ -1146,7 +1149,7 @@ export function ConsumablesPageClient({
       </Dialog>
 
       <Dialog open={!!stockInConsumable} onOpenChange={(open) => !open && setStockInConsumable(null)}>
-        <DialogContent className="max-w-lg">
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Catat Stok Masuk</DialogTitle>
             <DialogDescription>
@@ -1157,7 +1160,7 @@ export function ConsumablesPageClient({
           </DialogHeader>
           <form action={stockInAction} className="grid gap-3">
             {stockInState && (
-              <div className={`rounded-lg border px-3 py-2 text-sm ${stockInState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+              <div className={`rounded-xl border px-3 py-2 text-sm ${stockInState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                 {stockInState.message}
               </div>
             )}
@@ -1188,11 +1191,11 @@ export function ConsumablesPageClient({
               />
             </div>
             {stockInConsumable && (
-              <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+              <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                 Stok saat ini: {stockInConsumable.stock} {stockInConsumable.unit}
               </div>
             )}
-            <div className="flex justify-end gap-2">
+            <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => setStockInConsumable(null)}>
                 Batal
               </Button>

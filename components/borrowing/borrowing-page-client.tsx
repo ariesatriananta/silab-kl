@@ -471,7 +471,7 @@ export function BorrowingPageClient({
               Buat Pengajuan
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-xl">
+          <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Buat Pengajuan Peminjaman</DialogTitle>
               <DialogDescription>
@@ -481,7 +481,7 @@ export function BorrowingPageClient({
             <form action={createAction} className="grid gap-4">
               {createState && (
                 <div
-                  className={`rounded-lg border px-3 py-2 text-sm ${
+                  className={`rounded-xl border px-3 py-2 text-sm ${
                     createState.ok
                       ? "border-success/20 bg-success/5 text-success-foreground"
                       : "border-destructive/20 bg-destructive/5 text-destructive"
@@ -510,7 +510,7 @@ export function BorrowingPageClient({
                 {role === "mahasiswa" ? (
                   <>
                     <input type="hidden" name="requesterUserId" value={selectedRequesterId} />
-                    <div className="rounded-md border border-border bg-muted/40 px-3 py-2 text-sm">Akun Anda</div>
+                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm">Akun Anda</div>
                   </>
                 ) : (
                   <Select name="requesterUserId" value={selectedRequesterId} onValueChange={setSelectedRequesterId}>
@@ -645,7 +645,7 @@ export function BorrowingPageClient({
                 Tip: fokus isi data akademik dulu, lalu pilih alat/bahan. Setelah submit, proses dilanjutkan di detail transaksi.
               </div>
 
-              <div className="flex justify-end gap-2 pt-2">
+              <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={createPending}>
                   Batal
                 </Button>
@@ -787,7 +787,7 @@ export function BorrowingPageClient({
               </Button>
             </div>
           )}
-          <div className="flex flex-wrap items-center gap-3">
+          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,18rem)_minmax(0,18rem)_1fr] xl:items-center">
             <Select value={statusFilter} onValueChange={setStatusFilter}>
               <SelectTrigger className={isMahasiswa ? "w-full sm:w-64 bg-card" : "w-56 bg-card"}>
                 <SelectValue placeholder="Filter Status" />
@@ -806,7 +806,7 @@ export function BorrowingPageClient({
             </Select>
             {!isMahasiswa && (
               <Select value={scopeFilter} onValueChange={(v) => setScopeFilter(v as "all" | "mine" | "my_labs")}>
-                <SelectTrigger className="w-56 bg-card">
+                <SelectTrigger className="w-full bg-card xl:w-56">
                   <SelectValue placeholder="Filter Ruang Lingkup" />
                 </SelectTrigger>
                 <SelectContent>
@@ -818,7 +818,7 @@ export function BorrowingPageClient({
                 </SelectContent>
               </Select>
             )}
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs text-muted-foreground xl:justify-self-end xl:text-right">
               {isMahasiswa
                 ? "Gunakan filter status untuk memantau progres pengajuan Anda (menunggu, aktif, atau sudah selesai)."
                 : "Fokuskan daftar ke status yang sedang perlu ditindaklanjuti agar proses operasional lebih cepat."}
@@ -870,7 +870,7 @@ export function BorrowingPageClient({
             <Table className={isMahasiswa ? "min-w-[820px]" : "min-w-[1080px]"}>
               <TableHeader>
                 <TableRow className="bg-muted/50">
-                  <TableHead className="font-semibold">ID</TableHead>
+                  <TableHead className="font-semibold">Kode Transaksi</TableHead>
                   {!isMahasiswa && <TableHead className="font-semibold">Peminjam</TableHead>}
                   {!isMahasiswa && <TableHead className="font-semibold">NIM</TableHead>}
                   <TableHead className="font-semibold">Tgl Pinjam</TableHead>
@@ -1006,7 +1006,7 @@ export function BorrowingPageClient({
                   </div>
                 </div>
               )}
-              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+              <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 Urutan baca yang disarankan: <span className="font-medium text-foreground">Ringkasan</span> {"->"}{" "}
                 <span className="font-medium text-foreground">Item Pengajuan</span> {"->"}{" "}
                 <span className="font-medium text-foreground">Riwayat</span>
@@ -1097,7 +1097,7 @@ export function BorrowingPageClient({
                     <p className="mb-3 text-sm font-semibold text-foreground">Item Pengajuan</p>
                     <div className="flex flex-col gap-2">
                       {selectedBorrowing.items.length === 0 && (
-                        <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                        <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                           Belum ada item pada transaksi ini.
                         </div>
                       )}
@@ -1133,7 +1133,7 @@ export function BorrowingPageClient({
                     <p className="mb-3 text-sm font-semibold text-foreground">Riwayat Approval</p>
                     <div className="flex flex-col gap-2">
                       {selectedBorrowing.approvalHistory.length === 0 ? (
-                        <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                        <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                           Belum ada riwayat approval.
                         </div>
                       ) : (
@@ -1173,7 +1173,7 @@ export function BorrowingPageClient({
                     <p className="mb-3 text-sm font-semibold text-foreground">Riwayat Serah Terima</p>
                     <div className="flex flex-col gap-2">
                       {selectedBorrowing.handoverHistory.length === 0 ? (
-                        <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                        <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                           Belum ada riwayat serah terima.
                         </div>
                       ) : (
@@ -1200,7 +1200,7 @@ export function BorrowingPageClient({
                     <p className="mb-3 text-sm font-semibold text-foreground">Riwayat Pengembalian</p>
                     <div className="flex flex-col gap-2">
                       {selectedBorrowing.returnEvents.length === 0 ? (
-                        <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                        <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                           Belum ada riwayat pengembalian.
                         </div>
                       ) : (
@@ -1261,7 +1261,7 @@ export function BorrowingPageClient({
                       <div className="grid gap-2">
                         {approveState && (
                           <div
-                            className={`rounded-lg border px-3 py-2 text-sm ${
+                            className={`rounded-xl border px-3 py-2 text-sm ${
                               approveState.ok
                                 ? "border-success/20 bg-success/5 text-success-foreground"
                                 : "border-destructive/20 bg-destructive/5 text-destructive"
@@ -1272,7 +1272,7 @@ export function BorrowingPageClient({
                         )}
                         {rejectState && (
                           <div
-                            className={`rounded-lg border px-3 py-2 text-sm ${
+                            className={`rounded-xl border px-3 py-2 text-sm ${
                               rejectState.ok
                                 ? "border-success/20 bg-success/5 text-success-foreground"
                                 : "border-destructive/20 bg-destructive/5 text-destructive"
@@ -1323,12 +1323,15 @@ export function BorrowingPageClient({
 
               {canHandover && selectedBorrowing.status === "approved_waiting_handover" && (
                 <>
-                  <div className="flex flex-col gap-3">
-                    <p className="text-sm text-muted-foreground">
+                  <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-4">
+                    <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
+                      <p className="font-medium text-foreground">Serah Terima Transaksi</p>
+                      <p className="mt-1">
                       Serah terima akan mengaktifkan transaksi, mengisi due date, mengubah status alat menjadi dipinjam, dan mengurangi stok bahan.
-                    </p>
+                      </p>
+                    </div>
                     {handoverState && (
-                      <div className={`rounded-lg border px-3 py-2 text-sm ${handoverState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                      <div className={`rounded-xl border px-3 py-2 text-sm ${handoverState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                         {handoverState.message}
                       </div>
                     )}
@@ -1351,7 +1354,7 @@ export function BorrowingPageClient({
                           />
                         </div>
                       </div>
-                      <div className="flex justify-end">
+                      <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                         <Button type="submit" disabled={handoverPending}>
                           {handoverPending ? "Memproses..." : "Proses Serah Terima"}
                         </Button>
@@ -1366,17 +1369,20 @@ export function BorrowingPageClient({
                   selectedBorrowing.status === "overdue" ||
                   selectedBorrowing.status === "partially_returned") && (
                   <>
-                    <div className="flex flex-col gap-3">
-                      <p className="text-sm text-muted-foreground">
+                    <div className="flex flex-col gap-3 rounded-xl border border-border/60 bg-card p-4">
+                      <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
+                        <p className="font-medium text-foreground">Pengembalian Alat</p>
+                        <p className="mt-1">
                         Pengembalian parsial: proses satu alat per submit. Status transaksi berubah otomatis menjadi kembali sebagian atau dikembalikan.
-                      </p>
+                        </p>
+                      </div>
                       {returnState && (
-                        <div className={`rounded-lg border px-3 py-2 text-sm ${returnState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                        <div className={`rounded-xl border px-3 py-2 text-sm ${returnState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
                           {returnState.message}
                         </div>
                       )}
                       {returnableToolItems.length === 0 ? (
-                        <div className="rounded-lg border border-border/50 bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
+                        <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                           Semua alat pada transaksi ini sudah dikembalikan.
                         </div>
                       ) : (
@@ -1423,7 +1429,7 @@ export function BorrowingPageClient({
                               placeholder="Contoh: ada goresan ringan pada bodi"
                             />
                           </div>
-                          <div className="flex justify-end">
+                          <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                             <Button type="submit" disabled={returnPending}>
                               {returnPending ? "Memproses..." : "Terima Kembali"}
                             </Button>
