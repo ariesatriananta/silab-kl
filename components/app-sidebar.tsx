@@ -12,6 +12,7 @@ import {
   GraduationCap,
   KeyRound,
   LogOut,
+  Users,
 } from "lucide-react"
 import {
   Sidebar,
@@ -37,11 +38,12 @@ const mainNavItems: Array<{
   icon: typeof LayoutDashboard
   roles: Role[]
 }> = [
-  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "petugas_plp"] },
-  { title: "Alat Laboratorium", href: "/dashboard/tools", icon: Wrench, roles: ["admin", "petugas_plp"] },
   { title: "Peminjaman", href: "/dashboard/borrowing", icon: ArrowLeftRight, roles: ["admin", "petugas_plp"] },
   { title: "Bahan Habis Pakai", href: "/dashboard/consumables", icon: FlaskConical, roles: ["admin", "petugas_plp"] },
   { title: "Penggunaan Lab", href: "/dashboard/lab-usage", icon: CalendarDays, roles: ["admin", "petugas_plp"] },
+  { title: "Alat Laboratorium", href: "/dashboard/tools", icon: Wrench, roles: ["admin", "petugas_plp"] },
+  { title: "Kelola User", href: "/dashboard/users", icon: Users, roles: ["admin"] },
+  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "petugas_plp"] },
 ]
 
 const studentNavItems: Array<{
@@ -76,6 +78,11 @@ export function AppSidebar() {
     .join("") || "U"
   const roleLabel =
     role === "admin" ? "Admin" : role === "petugas_plp" ? "Petugas PLP" : "Mahasiswa"
+  const operasionalNav = visibleMainNav.filter((item) =>
+    ["/dashboard/borrowing", "/dashboard/consumables", "/dashboard/lab-usage"].includes(item.href),
+  )
+  const masterNav = visibleMainNav.filter((item) => ["/dashboard/tools", "/dashboard/users"].includes(item.href))
+  const monitoringNav = visibleMainNav.filter((item) => item.href === "/dashboard")
 
   return (
     <Sidebar collapsible="icon">
@@ -92,27 +99,69 @@ export function AppSidebar() {
       </SidebarHeader>
       <SidebarSeparator />
       <SidebarContent>
-        <SidebarGroup>
-          <SidebarGroupLabel>Menu Utama</SidebarGroupLabel>
-          <SidebarGroupContent>
-            <SidebarMenu>
-              {visibleMainNav.map((item) => (
-                <SidebarMenuItem key={item.href}>
-                  <SidebarMenuButton
-                    asChild
-                    isActive={pathname === item.href}
-                    tooltip={item.title}
-                  >
-                    <Link href={item.href}>
-                      <item.icon className="size-4" />
-                      <span>{item.title}</span>
-                    </Link>
-                  </SidebarMenuButton>
-                </SidebarMenuItem>
-              ))}
-            </SidebarMenu>
-          </SidebarGroupContent>
-        </SidebarGroup>
+        {operasionalNav.length > 0 && (
+          <SidebarGroup>
+            <SidebarGroupLabel>Operasional</SidebarGroupLabel>
+            <SidebarGroupContent>
+              <SidebarMenu>
+                {operasionalNav.map((item) => (
+                  <SidebarMenuItem key={item.href}>
+                    <SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.title}>
+                      <Link href={item.href}>
+                        <item.icon className="size-4" />
+                        <span>{item.title}</span>
+                      </Link>
+                    </SidebarMenuButton>
+                  </SidebarMenuItem>
+                ))}
+              </SidebarMenu>
+            </SidebarGroupContent>
+          </SidebarGroup>
+        )}
+        {masterNav.length > 0 && (
+          <>
+            <SidebarSeparator />
+            <SidebarGroup>
+              <SidebarGroupLabel>Master Data</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {masterNav.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.title}>
+                        <Link href={item.href}>
+                          <item.icon className="size-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
+        {monitoringNav.length > 0 && (
+          <>
+            <SidebarSeparator />
+            <SidebarGroup>
+              <SidebarGroupLabel>Monitoring</SidebarGroupLabel>
+              <SidebarGroupContent>
+                <SidebarMenu>
+                  {monitoringNav.map((item) => (
+                    <SidebarMenuItem key={item.href}>
+                      <SidebarMenuButton asChild isActive={pathname === item.href} tooltip={item.title}>
+                        <Link href={item.href}>
+                          <item.icon className="size-4" />
+                          <span>{item.title}</span>
+                        </Link>
+                      </SidebarMenuButton>
+                    </SidebarMenuItem>
+                  ))}
+                </SidebarMenu>
+              </SidebarGroupContent>
+            </SidebarGroup>
+          </>
+        )}
         {visibleStudentNav.length > 0 && (
           <>
             <SidebarSeparator />

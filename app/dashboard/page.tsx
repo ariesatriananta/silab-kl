@@ -353,6 +353,57 @@ export default async function DashboardPage() {
 
   return (
     <div className="flex flex-col gap-6 p-4 lg:p-6">
+      <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-card to-muted/30 p-5 shadow-sm">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div>
+            <h1 className="text-xl font-semibold text-foreground">Dashboard Monitoring</h1>
+            <p className="mt-1 text-sm text-muted-foreground">
+              Ringkasan operasional harian laboratorium: alat, peminjaman, bahan, dan penggunaan ruang.
+            </p>
+          </div>
+          <div className="grid grid-cols-2 gap-2 text-sm sm:w-[360px]">
+            <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2">
+              <p className="text-xs text-muted-foreground">Perlu Tindak Lanjut</p>
+              <p className="text-lg font-semibold text-foreground">{counts.overdue}</p>
+              <p className="text-xs text-muted-foreground">Transaksi terlambat</p>
+            </div>
+            <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2">
+              <p className="text-xs text-muted-foreground">Alat Dipinjam</p>
+              <p className="text-lg font-semibold text-foreground">{counts.borrowedTools}</p>
+              <p className="text-xs text-muted-foreground">Status asset borrowed</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <Card className="border-border/50 bg-card shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold">Fokus Hari Ini</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+          <div className="rounded-lg border border-warning/20 bg-warning/5 p-3">
+            <p className="text-xs text-muted-foreground">Peminjaman Terlambat</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{counts.overdue}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Tindak lanjuti pengembalian yang melewati due date.</p>
+          </div>
+          <div className="rounded-lg border border-border/50 bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">Aktivitas Baru</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{recentActivities.length}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Serah terima/pengembalian terbaru tercatat.</p>
+          </div>
+          <div className="rounded-lg border border-destructive/20 bg-destructive/5 p-3">
+            <p className="text-xs text-muted-foreground">Risiko Kerusakan</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{damageSummary.currentMaintenanceAssets}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Asset status maintenance/damaged saat ini.</p>
+          </div>
+          <div className="rounded-lg border border-border/50 bg-muted/30 p-3">
+            <p className="text-xs text-muted-foreground">Aktivitas Ruang</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{roomActivities.length}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Riwayat penggunaan lab terbaru.</p>
+          </div>
+        </CardContent>
+      </Card>
+
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         <StatCard
           title="Alat Tersedia"

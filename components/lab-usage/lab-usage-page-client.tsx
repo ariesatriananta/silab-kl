@@ -40,6 +40,7 @@ import {
 } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
+import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { useToast } from "@/hooks/use-toast"
 
 export type LabUsageLabOption = { id: string; name: string }
@@ -95,6 +96,7 @@ export function LabUsagePageClient({
   schedules: LabUsageScheduleRow[]
   history: LabUsageHistoryRow[]
 }) {
+  const [activeTab, setActiveTab] = useState<"schedule" | "history">("schedule")
   const [createScheduleOpen, setCreateScheduleOpen] = useState(false)
   const [createUsageOpen, setCreateUsageOpen] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<LabUsageScheduleRow | null>(null)
@@ -134,6 +136,12 @@ export function LabUsagePageClient({
     () => schedules.filter((s) => s.labId === usageLabId),
     [schedules, usageLabId],
   )
+  const usageSummary = {
+    schedules: schedules.length,
+    history: history.length,
+    fullSchedules: schedules.filter((s) => s.enrolledCount >= s.capacity).length,
+    noAttendanceLogs: history.filter((h) => h.attendance.length === 0).length,
+  }
 
   useEffect(() => {
     const states = [
@@ -194,6 +202,85 @@ export function LabUsagePageClient({
 
   return (
     <div className="flex flex-col gap-6 p-4 lg:p-6">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div>
+          <h1 className="text-xl font-semibold text-foreground">Penggunaan Lab</h1>
+          <p className="text-sm text-muted-foreground">
+            Kelola jadwal laboratorium dan catat penggunaan aktual beserta absensi mahasiswa.
+          </p>
+        </div>
+        <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+          <Button
+            type="button"
+            onClick={() => {
+              setActiveTab("history")
+              setCreateUsageOpen(true)
+            }}
+          >
+            <Plus className="size-4" />
+            Catat Penggunaan Lab
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            onClick={() => {
+              setActiveTab("schedule")
+              setCreateScheduleOpen(true)
+            }}
+          >
+            <Plus className="size-4" />
+            Tambah Jadwal
+          </Button>
+        </div>
+      </div>
+
+      <Card className="border-border/50 bg-card shadow-sm">
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold text-card-foreground">Fokus Kerja</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+          <button
+            type="button"
+            onClick={() => {
+              setActiveTab("history")
+              setCreateUsageOpen(true)
+            }}
+            className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10"
+          >
+            <p className="text-xs text-muted-foreground">Operasional Harian</p>
+            <p className="mt-1 text-sm font-semibold text-foreground">Catat Penggunaan</p>
+            <p className="mt-1 text-xs text-muted-foreground">Gunakan setelah sesi selesai</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("schedule")}
+            className="rounded-lg border border-border/50 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
+          >
+            <p className="text-xs text-muted-foreground">Jadwal Aktif</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{usageSummary.schedules}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Total jadwal tersimpan</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("history")}
+            className="rounded-lg border border-border/50 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
+          >
+            <p className="text-xs text-muted-foreground">Riwayat Penggunaan</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{usageSummary.history}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Log penggunaan tersimpan</p>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("history")}
+            className="rounded-lg border border-warning/20 bg-warning/5 p-3 text-left transition-colors hover:bg-warning/10"
+          >
+            <p className="text-xs text-muted-foreground">Riwayat tanpa Absensi</p>
+            <p className="mt-1 text-lg font-semibold text-foreground">{usageSummary.noAttendanceLogs}</p>
+            <p className="mt-1 text-xs text-muted-foreground">Perlu dicek kelengkapan data</p>
+          </button>
+        </CardContent>
+      </Card>
+
       <div className="flex flex-wrap items-center gap-2">
         <Dialog open={createScheduleOpen} onOpenChange={setCreateScheduleOpen}>
           <DialogTrigger asChild>
@@ -270,6 +357,9 @@ export function LabUsagePageClient({
                   <Input id="enrolledCount" name="enrolledCount" type="number" min={0} defaultValue={0} required />
                 </div>
               </div>
+              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                Gunakan form ini untuk perencanaan jadwal. Untuk aktivitas yang sudah berlangsung, gunakan <span className="font-medium text-foreground">Catat Penggunaan Lab</span>.
+              </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateScheduleOpen(false)}>
                   Batal
@@ -292,7 +382,7 @@ export function LabUsagePageClient({
           <DialogContent className="max-w-2xl">
             <DialogHeader>
               <DialogTitle>Catat Riwayat Penggunaan Lab</DialogTitle>
-              <DialogDescription>Digunakan setelah sesi praktikum/aktivitas lab selesai.</DialogDescription>
+              <DialogDescription>Digunakan setelah sesi praktikum/aktivitas lab selesai (bukan untuk membuat rencana jadwal).</DialogDescription>
             </DialogHeader>
             <form action={createUsageAction} className="grid gap-3">
               {createUsageState && (
@@ -413,6 +503,9 @@ export function LabUsagePageClient({
                   Jika diisi, jumlah baris harus sama dengan jumlah mahasiswa.
                 </p>
               </div>
+              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+                Tips cepat: pilih <span className="font-medium text-foreground">Link Jadwal</span> untuk auto-fill data sesi, lalu lengkapi absensi jika tersedia.
+              </div>
               <div className="flex justify-end gap-2">
                 <Button type="button" variant="outline" onClick={() => setCreateUsageOpen(false)}>
                   Batal
@@ -426,17 +519,40 @@ export function LabUsagePageClient({
         </Dialog>
       </div>
 
-      <Tabs defaultValue="schedule" className="flex flex-col gap-4">
-        <TabsList className="w-fit">
-          <TabsTrigger value="schedule">Jadwal Lab</TabsTrigger>
-          <TabsTrigger value="history">Riwayat</TabsTrigger>
+      <Tabs
+        value={activeTab}
+        onValueChange={(v) => setActiveTab(v as "schedule" | "history")}
+        className="flex flex-col gap-4"
+      >
+        <TabsList className="grid w-full grid-cols-2 rounded-xl bg-muted/50 p-1 sm:w-auto">
+          <TabsTrigger value="schedule" className="rounded-lg">Jadwal Lab</TabsTrigger>
+          <TabsTrigger value="history" className="rounded-lg">Riwayat Penggunaan</TabsTrigger>
         </TabsList>
 
         <TabsContent value="schedule" className="mt-0">
+          <div className="mb-4 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            Fokus tab ini: perencanaan dan pengelolaan jadwal lab (create/edit/hapus jadwal).
+          </div>
           {schedules.length === 0 ? (
             <Card className="border-border/50 bg-card shadow-sm">
-              <CardContent className="p-6 text-sm text-muted-foreground">
-                Belum ada data jadwal laboratorium di database.
+              <CardContent className="p-4">
+                <Empty className="border border-border/50 bg-muted/20 py-10">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <CalendarDays className="size-5" />
+                    </EmptyMedia>
+                    <EmptyTitle className="text-base">Belum ada jadwal laboratorium</EmptyTitle>
+                    <EmptyDescription>
+                      Buat jadwal pertama untuk membantu perencanaan sesi praktikum dan mempermudah auto-fill usage log.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                  <EmptyContent>
+                    <Button type="button" size="sm" onClick={() => setCreateScheduleOpen(true)}>
+                      <Plus className="size-4" />
+                      Tambah Jadwal
+                    </Button>
+                  </EmptyContent>
+                </Empty>
               </CardContent>
             </Card>
           ) : (
@@ -506,11 +622,17 @@ export function LabUsagePageClient({
         </TabsContent>
 
         <TabsContent value="history" className="mt-0">
+          <div className="mb-4 rounded-lg border border-border/50 bg-muted/20 px-3 py-2 text-xs text-muted-foreground">
+            Fokus tab ini: pencatatan penggunaan aktual dan peninjauan absensi per sesi.
+          </div>
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
               <CardTitle className="text-base font-semibold text-card-foreground">Riwayat Penggunaan Lab</CardTitle>
             </CardHeader>
             <CardContent className="px-0">
+              <div className="px-6 pb-2 text-xs text-muted-foreground">
+                Geser tabel ke samping pada layar kecil untuk melihat semua kolom riwayat.
+              </div>
               <div className="overflow-x-auto">
                 <Table>
                   <TableHeader>
@@ -528,8 +650,24 @@ export function LabUsagePageClient({
                   <TableBody>
                     {history.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-8 text-center text-muted-foreground">
-                          Belum ada riwayat penggunaan laboratorium di database.
+                        <TableCell colSpan={8} className="py-6">
+                          <Empty className="border border-border/50 bg-muted/20 py-8">
+                            <EmptyHeader>
+                              <EmptyMedia variant="icon">
+                                <Clock className="size-5" />
+                              </EmptyMedia>
+                              <EmptyTitle className="text-base">Belum ada riwayat penggunaan</EmptyTitle>
+                              <EmptyDescription>
+                                Catat penggunaan lab setelah sesi selesai agar histori dan absensi tersimpan.
+                              </EmptyDescription>
+                            </EmptyHeader>
+                            <EmptyContent>
+                              <Button type="button" size="sm" onClick={() => setCreateUsageOpen(true)}>
+                                <Plus className="size-4" />
+                                Catat Penggunaan Lab
+                              </Button>
+                            </EmptyContent>
+                          </Empty>
                         </TableCell>
                       </TableRow>
                     )}
