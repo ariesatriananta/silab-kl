@@ -1,7 +1,8 @@
 "use client"
 
 import Link from "next/link"
-import { useActionState, useEffect, useMemo, useRef, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { AlertTriangle, CheckCircle2, Clock, Eye, Package, Plus, Printer, XCircle } from "lucide-react"
 
 import {
@@ -243,6 +244,8 @@ export function BorrowingPageClient({
   rows,
   details,
   createOptions,
+  pagination,
+  initialListFilters,
   prefill,
 }: {
   role: "admin" | "mahasiswa" | "petugas_plp"
@@ -256,16 +259,20 @@ export function BorrowingPageClient({
     tools: BorrowingCreateToolOption[]
     consumables: BorrowingCreateConsumableOption[]
   }
+  pagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
+  initialListFilters: { status: DisplayStatus | "all" | "approved_waiting_handover"; scope: "all" | "mine" | "my_labs" }
   prefill?: {
     openCreate?: boolean
     labId?: string
     toolModelCode?: string
   }
 }) {
-  const [statusFilter, setStatusFilter] = useState("all")
-  const [scopeFilter, setScopeFilter] = useState<"all" | "mine" | "my_labs">(
-    role === "petugas_plp" ? "my_labs" : role === "mahasiswa" ? "mine" : "all",
-  )
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [pagingPending, startPagingTransition] = useTransition()
+  const [statusFilter, setStatusFilter] = useState<string>(initialListFilters.status)
+  const [scopeFilter, setScopeFilter] = useState<"all" | "mine" | "my_labs">(initialListFilters.scope)
   const [selectedBorrowingId, setSelectedBorrowingId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedLabId, setSelectedLabId] = useState(createOptions.labs[0]?.id ?? "")
@@ -311,19 +318,14 @@ export function BorrowingPageClient({
   const canHandover = role === "admin" || role === "petugas_plp"
   const isMahasiswa = role === "mahasiswa"
 
-  const filtered = rows.filter((b) => {
-    const statusMatch = statusFilter === "all" || b.status === statusFilter
-    if (!statusMatch) return false
+  useEffect(() => {
+    queueMicrotask(() => {
+      setStatusFilter(initialListFilters.status)
+      setScopeFilter(initialListFilters.scope)
+    })
+  }, [initialListFilters.status, initialListFilters.scope])
 
-    if (scopeFilter === "mine") {
-      return b.requesterUserId === currentUserId || b.createdByUserId === currentUserId
-    }
-    if (scopeFilter === "my_labs") {
-      return !!accessibleLabIds?.includes(b.labId)
-    }
-    return true
-  })
-
+  const filtered = rows
   const summary = {
     pending: rows.filter((b) => b.status === "pending" || b.status === "approved_waiting_handover").length,
     active: rows.filter((b) => b.status === "active" || b.status === "partially_returned").length,
@@ -376,6 +378,33 @@ export function BorrowingPageClient({
           selectedBorrowing.status === "overdue" ||
           selectedBorrowing.status === "partially_returned")))
   )
+
+  const goToPage = (nextPage: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (nextPage > 1) params.set("page", String(nextPage))
+    else params.delete("page")
+    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    startPagingTransition(() => {
+      router.replace(target, { scroll: false })
+    })
+  }
+
+  const applyListFilters = (next: Partial<{ status: string; scope: "all" | "mine" | "my_labs"; page: number }>) => {
+    const params = new URLSearchParams(searchParams.toString())
+    const nextStatus = next.status ?? statusFilter
+    const nextScope = next.scope ?? scopeFilter
+    const nextPage = next.page ?? 1
+    if (nextStatus !== "all") params.set("status", nextStatus)
+    else params.delete("status")
+    if (nextScope !== (role === "petugas_plp" ? "my_labs" : role === "mahasiswa" ? "mine" : "all")) params.set("scope", nextScope)
+    else params.delete("scope")
+    if (nextPage > 1) params.set("page", String(nextPage))
+    else params.delete("page")
+    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    startPagingTransition(() => {
+      router.replace(target, { scroll: false })
+    })
+  }
 
   const handleLabChange = (labId: string) => {
     setSelectedLabId(labId)
@@ -716,7 +745,7 @@ export function BorrowingPageClient({
           <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
             <button
               type="button"
-              onClick={() => setStatusFilter("pending")}
+              onClick={() => applyListFilters({ status: "pending", page: 1 })}
               className="rounded-lg border border-warning/20 bg-warning/5 p-3 text-left transition-colors hover:bg-warning/10"
             >
               <p className="text-xs text-muted-foreground">Approval Pending</p>
@@ -725,7 +754,7 @@ export function BorrowingPageClient({
             </button>
             <button
               type="button"
-              onClick={() => setStatusFilter("approved_waiting_handover")}
+              onClick={() => applyListFilters({ status: "approved_waiting_handover", page: 1 })}
               className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10"
             >
               <p className="text-xs text-muted-foreground">Menunggu Serah Terima</p>
@@ -734,7 +763,7 @@ export function BorrowingPageClient({
             </button>
             <button
               type="button"
-              onClick={() => setStatusFilter("active")}
+              onClick={() => applyListFilters({ status: "active", page: 1 })}
               className="rounded-lg border border-border/50 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
             >
               <p className="text-xs text-muted-foreground">Transaksi Aktif</p>
@@ -743,7 +772,7 @@ export function BorrowingPageClient({
             </button>
             <button
               type="button"
-              onClick={() => setStatusFilter("overdue")}
+              onClick={() => applyListFilters({ status: "overdue", page: 1 })}
               className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-left transition-colors hover:bg-destructive/10"
             >
               <p className="text-xs text-muted-foreground">Keterlambatan</p>
@@ -770,25 +799,31 @@ export function BorrowingPageClient({
             </div>
           ) : (
             <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant={statusFilter === "all" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("all")}>
+              <Button type="button" variant={statusFilter === "all" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "all", page: 1 })}>
                 Semua
               </Button>
-              <Button type="button" variant={statusFilter === "pending" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("pending")}>
+              <Button type="button" variant={statusFilter === "pending" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "pending", page: 1 })}>
                 Menunggu Approval
               </Button>
-              <Button type="button" variant={statusFilter === "approved_waiting_handover" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("approved_waiting_handover")}>
+              <Button type="button" variant={statusFilter === "approved_waiting_handover" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "approved_waiting_handover", page: 1 })}>
                 Menunggu Serah Terima
               </Button>
-              <Button type="button" variant={statusFilter === "active" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("active")}>
+              <Button type="button" variant={statusFilter === "active" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "active", page: 1 })}>
                 Aktif
               </Button>
-              <Button type="button" variant={statusFilter === "overdue" ? "default" : "outline"} size="sm" onClick={() => setStatusFilter("overdue")}>
+              <Button type="button" variant={statusFilter === "overdue" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "overdue", page: 1 })}>
                 Terlambat
               </Button>
             </div>
           )}
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,18rem)_minmax(0,18rem)_1fr] xl:items-center">
-            <Select value={statusFilter} onValueChange={setStatusFilter}>
+            <Select
+              value={statusFilter}
+              onValueChange={(v) => {
+                setStatusFilter(v)
+                applyListFilters({ status: v, page: 1 })
+              }}
+            >
               <SelectTrigger className={isMahasiswa ? "w-full sm:w-64 bg-card" : "w-56 bg-card"}>
                 <SelectValue placeholder="Filter Status" />
               </SelectTrigger>
@@ -805,7 +840,13 @@ export function BorrowingPageClient({
               </SelectContent>
             </Select>
             {!isMahasiswa && (
-              <Select value={scopeFilter} onValueChange={(v) => setScopeFilter(v as "all" | "mine" | "my_labs")}>
+              <Select
+                value={scopeFilter}
+                onValueChange={(v) => {
+                  setScopeFilter(v as "all" | "mine" | "my_labs")
+                  applyListFilters({ scope: v as "all" | "mine" | "my_labs", page: 1 })
+                }}
+              >
                 <SelectTrigger className="w-full bg-card xl:w-56">
                   <SelectValue placeholder="Filter Ruang Lingkup" />
                 </SelectTrigger>
@@ -858,7 +899,14 @@ export function BorrowingPageClient({
 
       <Card className="border-border/50 bg-card shadow-sm">
         <CardHeader className="pb-3">
-          <CardTitle className="text-base font-semibold text-card-foreground">Daftar Peminjaman ({filtered.length})</CardTitle>
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-base font-semibold text-card-foreground">
+              Daftar Peminjaman ({pagination.totalItems})
+            </CardTitle>
+            <p className="text-xs text-muted-foreground">
+              Halaman {pagination.page}/{pagination.totalPages} • {pagination.totalItems} transaksi
+            </p>
+          </div>
         </CardHeader>
         <CardContent className="px-0">
           <div className="px-6 pb-2 text-xs text-muted-foreground">
@@ -963,6 +1011,36 @@ export function BorrowingPageClient({
                 })}
               </TableBody>
             </Table>
+          </div>
+          <div className="flex flex-col gap-3 border-t border-border/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Menampilkan {(pagination.page - 1) * pagination.pageSize + (rows.length > 0 ? 1 : 0)}-
+              {(pagination.page - 1) * pagination.pageSize + rows.length} dari {pagination.totalItems} transaksi
+              {statusFilter !== "all" || scopeFilter !== "all" ? " (filter status/ruang lingkup diterapkan pada halaman ini)" : ""}.
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pagination.page <= 1 || pagingPending}
+                onClick={() => goToPage(pagination.page - 1)}
+              >
+                Sebelumnya
+              </Button>
+              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+                {pagination.page}/{pagination.totalPages}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pagination.page >= pagination.totalPages || pagingPending}
+                onClick={() => goToPage(pagination.page + 1)}
+              >
+                {pagingPending ? "Memuat..." : "Berikutnya"}
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

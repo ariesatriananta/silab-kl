@@ -34,7 +34,12 @@ async function getAccessibleLabIds(role: Role, userId: string) {
   return rows.map((r) => r.labId)
 }
 
-async function getConsumablesData(role: Role, userId: string, accessibleLabIds: string[] | null) {
+async function getConsumablesData(
+  role: Role,
+  userId: string,
+  accessibleLabIds: string[] | null,
+  paging: { requestPage: number; requestPageSize: number; movementPage: number; movementPageSize: number },
+) {
   const stockWhere =
     role === "petugas_plp" && accessibleLabIds
       ? accessibleLabIds.length > 0
@@ -51,7 +56,10 @@ async function getConsumablesData(role: Role, userId: string, accessibleLabIds: 
           ? inArray(materialRequests.labId, accessibleLabIds)
           : sql`false`
 
-  const [stockRows, requestRows, requestLineRows, labRows, createItemRows, movementRows] = await Promise.all([
+  const requestOffset = (paging.requestPage - 1) * paging.requestPageSize
+  const movementOffset = (paging.movementPage - 1) * paging.movementPageSize
+
+  const [stockRows, requestRows, requestCountRows, requestLineRows, labRows, createItemRows, movementRows, movementCountRows] = await Promise.all([
     db
       .select({
         id: consumableItems.id,
@@ -94,7 +102,12 @@ async function getConsumablesData(role: Role, userId: string, accessibleLabIds: 
       .where(requestWhere)
       .groupBy(materialRequests.id, labs.name, users.fullName)
       .orderBy(desc(materialRequests.requestedAt))
-      .limit(20),
+      .limit(paging.requestPageSize)
+      .offset(requestOffset),
+    db
+      .select({ total: sql<number>`count(*)` })
+      .from(materialRequests)
+      .where(requestWhere),
     db
       .select({
         requestId: materialRequestItems.requestId,
@@ -152,7 +165,13 @@ async function getConsumablesData(role: Role, userId: string, accessibleLabIds: 
       .leftJoin(users, eq(users.id, consumableStockMovements.actorUserId))
       .where(stockWhere)
       .orderBy(desc(consumableStockMovements.createdAt))
-      .limit(100),
+      .limit(paging.movementPageSize)
+      .offset(movementOffset),
+    db
+      .select({ total: sql<number>`count(*)` })
+      .from(consumableStockMovements)
+      .innerJoin(consumableItems, eq(consumableItems.id, consumableStockMovements.consumableItemId))
+      .where(stockWhere),
   ])
 
   const consumables: ConsumableStockRow[] = stockRows.map((row) => ({
@@ -220,19 +239,57 @@ async function getConsumablesData(role: Role, userId: string, accessibleLabIds: 
     createdAt: row.createdAt.toISOString(),
   }))
 
-  return { consumables, requests, createLabs, createItems, stockMovementRows }
+  const requestTotalItems = Number(requestCountRows[0]?.total ?? 0)
+  const requestTotalPages = Math.max(1, Math.ceil(requestTotalItems / paging.requestPageSize))
+  const movementTotalItems = Number(movementCountRows[0]?.total ?? 0)
+  const movementTotalPages = Math.max(1, Math.ceil(movementTotalItems / paging.movementPageSize))
+
+  return {
+    consumables,
+    requests,
+    createLabs,
+    createItems,
+    stockMovementRows,
+    pagination: {
+      requests: {
+        page: Math.min(paging.requestPage, requestTotalPages),
+        pageSize: paging.requestPageSize,
+        totalItems: requestTotalItems,
+        totalPages: requestTotalPages,
+      },
+      movements: {
+        page: Math.min(paging.movementPage, movementTotalPages),
+        pageSize: paging.movementPageSize,
+        totalItems: movementTotalItems,
+        totalPages: movementTotalPages,
+      },
+    },
+  }
 }
 
-export default async function ConsumablesPage() {
+export default async function ConsumablesPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) redirect("/")
 
   const role = session.user.role as Role
   const accessibleLabIds = await getAccessibleLabIds(role, session.user.id)
-  const { consumables, requests, createLabs, createItems, stockMovementRows } = await getConsumablesData(
+  const sp = (await searchParams) ?? {}
+  const getSingle = (key: string) => {
+    const v = sp[key]
+    return Array.isArray(v) ? v[0] : v
+  }
+  const requestPage = Math.max(1, Number.parseInt(getSingle("reqPage") ?? "1", 10) || 1)
+  const movementPage = Math.max(1, Number.parseInt(getSingle("movPage") ?? "1", 10) || 1)
+
+  const { consumables, requests, createLabs, createItems, stockMovementRows, pagination } = await getConsumablesData(
     role,
     session.user.id,
     accessibleLabIds,
+    { requestPage, requestPageSize: 20, movementPage, movementPageSize: 50 },
   )
 
   return (
@@ -244,6 +301,7 @@ export default async function ConsumablesPage() {
       stockMovements={stockMovementRows}
       masterLabs={createLabs}
       createOptions={{ labs: createLabs, items: createItems }}
+      pagination={pagination}
     />
   )
 }

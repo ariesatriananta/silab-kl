@@ -68,7 +68,11 @@ async function getAccessibleLabIds(role: Role, userId: string) {
   return rows.map((r) => r.labId)
 }
 
-export default async function LabUsagePage() {
+export default async function LabUsagePage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) redirect("/")
 
@@ -95,7 +99,13 @@ export default async function LabUsagePage() {
         ? inArray(labs.id, accessibleLabIds)
         : sql`false`
 
-  const [labRows, scheduleRowsRaw, historyRowsRaw, attendanceRowsRaw] = await Promise.all([
+  const sp = (await searchParams) ?? {}
+  const histPageRaw = Array.isArray(sp.histPage) ? sp.histPage[0] : sp.histPage
+  const historyPage = Math.max(1, Number.parseInt(histPageRaw ?? "1", 10) || 1)
+  const historyPageSize = 20
+  const historyOffset = (historyPage - 1) * historyPageSize
+
+  const [labRows, scheduleRowsRaw, historyRowsRaw, historyCountRows, attendanceRowsRaw] = await Promise.all([
     db.select({ id: labs.id, name: labs.name }).from(labs).where(labsFilter).orderBy(asc(labs.name)),
     db
       .select({
@@ -130,7 +140,12 @@ export default async function LabUsagePage() {
       .innerJoin(labs, eq(labs.id, labUsageLogs.labId))
       .where(usageFilter)
       .orderBy(desc(labUsageLogs.startedAt))
-      .limit(100),
+      .limit(historyPageSize)
+      .offset(historyOffset),
+    db
+      .select({ total: sql<number>`count(*)` })
+      .from(labUsageLogs)
+      .where(usageFilter),
     db
       .select({
         usageLogId: labUsageAttendances.usageLogId,
@@ -181,5 +196,21 @@ export default async function LabUsagePage() {
     attendance: attendanceMap.get(r.id) ?? [],
   }))
 
-  return <LabUsagePageClient role={role as "admin" | "petugas_plp"} labs={labOptions} schedules={schedules} history={history} />
+  const totalHistoryItems = Number(historyCountRows[0]?.total ?? 0)
+  const totalHistoryPages = Math.max(1, Math.ceil(totalHistoryItems / historyPageSize))
+
+  return (
+    <LabUsagePageClient
+      role={role as "admin" | "petugas_plp"}
+      labs={labOptions}
+      schedules={schedules}
+      history={history}
+      historyPagination={{
+        page: Math.min(historyPage, totalHistoryPages),
+        pageSize: historyPageSize,
+        totalItems: totalHistoryItems,
+        totalPages: totalHistoryPages,
+      }}
+    />
+  )
 }

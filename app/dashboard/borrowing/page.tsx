@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 
 import {
   BorrowingPageClient,
@@ -30,6 +30,17 @@ import {
 export const dynamic = "force-dynamic"
 
 type Role = "admin" | "mahasiswa" | "petugas_plp"
+type BorrowingPageStatusFilter =
+  | "all"
+  | "pending"
+  | "approved_waiting_handover"
+  | "active"
+  | "partially_returned"
+  | "overdue"
+  | "completed"
+  | "rejected"
+  | "cancelled"
+type BorrowingPageScopeFilter = "all" | "mine" | "my_labs"
 
 function fmtDate(date: Date | null) {
   if (!date) return null
@@ -74,10 +85,16 @@ async function getAccessibleLabIds(role: Role, userId: string) {
   return assignments.map((a) => a.labId)
 }
 
-async function getBorrowingData(role: Role, userId: string) {
+async function getBorrowingData(
+  role: Role,
+  userId: string,
+  page: number,
+  pageSize: number,
+  filters: { status: BorrowingPageStatusFilter; scope: BorrowingPageScopeFilter },
+) {
   const accessibleLabIds = await getAccessibleLabIds(role, userId)
 
-  const baseWhere =
+  const roleBaseWhere =
     role === "admin"
       ? undefined
       : role === "mahasiswa"
@@ -86,7 +103,45 @@ async function getBorrowingData(role: Role, userId: string) {
           ? inArray(borrowingTransactions.labId, accessibleLabIds)
           : sql`false`
 
-  const txRows = await db
+  const scopeWhere =
+    role === "mahasiswa"
+      ? eq(borrowingTransactions.requesterUserId, userId)
+      : filters.scope === "mine"
+        ? or(eq(borrowingTransactions.requesterUserId, userId), eq(borrowingTransactions.createdByUserId, userId))
+        : filters.scope === "my_labs"
+          ? accessibleLabIds && accessibleLabIds.length > 0
+            ? inArray(borrowingTransactions.labId, accessibleLabIds)
+            : sql`false`
+          : undefined
+
+  const statusWhere =
+    filters.status === "all"
+      ? undefined
+      : filters.status === "pending"
+        ? inArray(borrowingTransactions.status, ["submitted", "pending_approval"])
+        : filters.status === "overdue"
+          ? and(
+              inArray(borrowingTransactions.status, ["active", "partially_returned"]),
+              sql`${borrowingTransactions.dueDate} is not null`,
+              sql`${borrowingTransactions.dueDate} < now()`,
+            )
+          : eq(
+              borrowingTransactions.status,
+              filters.status as
+                | "approved_waiting_handover"
+                | "active"
+                | "partially_returned"
+                | "completed"
+                | "rejected"
+                | "cancelled",
+            )
+
+  const finalWhere = and(roleBaseWhere, scopeWhere, statusWhere)
+
+  const offset = (page - 1) * pageSize
+
+  const [txRows, totalCountRows] = await Promise.all([
+    db
     .select({
       id: borrowingTransactions.id,
       code: borrowingTransactions.code,
@@ -110,13 +165,33 @@ async function getBorrowingData(role: Role, userId: string) {
     .from(borrowingTransactions)
     .innerJoin(users, eq(users.id, borrowingTransactions.requesterUserId))
     .innerJoin(labs, eq(labs.id, borrowingTransactions.labId))
-    .where(baseWhere)
+    .where(finalWhere)
     .orderBy(desc(borrowingTransactions.requestedAt))
-    .limit(100)
+    .limit(pageSize)
+    .offset(offset),
+    db
+      .select({ total: sql<number>`count(*)` })
+      .from(borrowingTransactions)
+      .where(finalWhere),
+  ])
+
+  const totalItems = Number(totalCountRows[0]?.total ?? 0)
+  const totalPages = Math.max(1, Math.ceil(totalItems / pageSize))
 
   const txIds = txRows.map((row) => row.id)
   if (txIds.length === 0) {
-    return { rows: [] as BorrowingListRow[], details: {} as Record<string, BorrowingDetail>, accessibleLabIds }
+    return {
+      rows: [] as BorrowingListRow[],
+      details: {} as Record<string, BorrowingDetail>,
+      accessibleLabIds,
+      activeFilters: filters,
+      pagination: {
+        page: Math.min(page, totalPages),
+        pageSize,
+        totalItems,
+        totalPages,
+      },
+    }
   }
 
   const [
@@ -354,7 +429,18 @@ async function getBorrowingData(role: Role, userId: string) {
   // For later usage (currently not shown, but useful if needed)
   void returnCountByTx
 
-  return { rows, details, accessibleLabIds }
+  return {
+    rows,
+    details,
+    accessibleLabIds,
+    activeFilters: filters,
+    pagination: {
+      page: Math.min(page, totalPages),
+      pageSize,
+      totalItems,
+      totalPages,
+    },
+  }
 }
 
 async function getCreateOptions(role: Role, userId: string, accessibleLabIds: string[] | null) {
@@ -462,9 +548,39 @@ export default async function BorrowingPage({
   const role = session.user.role as Role
   const currentUserId = session.user.id
 
-  const { rows, details, accessibleLabIds } = await getBorrowingData(role, currentUserId)
-  const options = await getCreateOptions(role, currentUserId, accessibleLabIds)
   const sp = (await searchParams) ?? {}
+  const pageParam = Array.isArray(sp.page) ? sp.page[0] : sp.page
+  const page = Math.max(1, Number.parseInt(pageParam ?? "1", 10) || 1)
+  const statusParamRaw = Array.isArray(sp.status) ? sp.status[0] : sp.status
+  const scopeParamRaw = Array.isArray(sp.scope) ? sp.scope[0] : sp.scope
+  const statusParam = ([
+    "all",
+    "pending",
+    "approved_waiting_handover",
+    "active",
+    "partially_returned",
+    "overdue",
+    "completed",
+    "rejected",
+    "cancelled",
+  ] as const).includes((statusParamRaw ?? "all") as BorrowingPageStatusFilter)
+    ? ((statusParamRaw ?? "all") as BorrowingPageStatusFilter)
+    : "all"
+  const defaultScope: BorrowingPageScopeFilter =
+    role === "petugas_plp" ? "my_labs" : role === "mahasiswa" ? "mine" : "all"
+  const scopeCandidate = (scopeParamRaw ?? defaultScope) as BorrowingPageScopeFilter
+  const scopeParam: BorrowingPageScopeFilter = ["all", "mine", "my_labs"].includes(scopeCandidate)
+    ? scopeCandidate
+    : defaultScope
+
+  const { rows, details, accessibleLabIds, pagination, activeFilters } = await getBorrowingData(
+    role,
+    currentUserId,
+    page,
+    20,
+    { status: statusParam, scope: scopeParam },
+  )
+  const options = await getCreateOptions(role, currentUserId, accessibleLabIds)
   const prefill = {
     openCreate: sp.openCreate === "1",
     labId: typeof sp.labId === "string" ? sp.labId : undefined,
@@ -484,6 +600,8 @@ export default async function BorrowingPage({
         tools: options.toolOptions,
         consumables: options.consumableOptions,
       }}
+      pagination={pagination}
+      initialListFilters={activeFilters}
       prefill={prefill}
     />
   )

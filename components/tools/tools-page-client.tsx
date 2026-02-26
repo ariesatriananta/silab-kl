@@ -1,6 +1,7 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { AlertTriangle, CheckCircle2, Eye, Pencil, Plus, Printer, QrCode, Search, Trash2, Wrench } from "lucide-react"
 import QRCode from "qrcode"
 
@@ -112,15 +113,30 @@ export function ToolsPageClient({
   data,
   masterLabs,
   events,
+  filterLabs,
+  filterCategories,
+  kpi,
+  pagination,
+  initialFilters,
 }: {
   role: "admin" | "petugas_plp"
   data: ToolRow[]
   masterLabs: ToolCreateLabOption[]
   events: ToolAssetEventRow[]
+  filterLabs: string[]
+  filterCategories: string[]
+  kpi: { totalUnits: number; available: number; borrowed: number; issue: number }
+  pagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
+  initialFilters: { q: string; lab: string; category: string }
 }) {
-  const [search, setSearch] = useState("")
-  const [labFilter, setLabFilter] = useState("all")
-  const [categoryFilter, setCategoryFilter] = useState("all")
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [isPendingNavigation, startNavigation] = useTransition()
+
+  const [search, setSearch] = useState(initialFilters.q)
+  const [labFilter, setLabFilter] = useState(initialFilters.lab)
+  const [categoryFilter, setCategoryFilter] = useState(initialFilters.category)
   const [showAdd, setShowAdd] = useState(false)
   const [showQr, setShowQr] = useState<ToolRow | null>(null)
   const [qrPreviewDataUrl, setQrPreviewDataUrl] = useState<string | null>(null)
@@ -144,9 +160,6 @@ export function ToolsPageClient({
   const toastKeys = useRef<string[]>([])
   const canManage = role === "admin" || role === "petugas_plp"
 
-  const labs = Array.from(new Set(data.map((d) => d.lab)))
-  const categories = Array.from(new Set(data.map((d) => d.category)))
-
   const eventMap = useMemo(() => {
     const map = new Map<string, ToolAssetEventRow[]>()
     for (const e of events) {
@@ -157,22 +170,34 @@ export function ToolsPageClient({
     return map
   }, [events])
 
-  const filtered = data.filter((t) => {
-    const q = search.toLowerCase()
-    return (
-      (labFilter === "all" || t.lab === labFilter) &&
-      (categoryFilter === "all" || t.category === categoryFilter) &&
-      (t.name.toLowerCase().includes(q) ||
-        t.assetCode.toLowerCase().includes(q) ||
-        t.modelCode.toLowerCase().includes(q) ||
-        (t.inventoryCode ?? "").toLowerCase().includes(q))
-    )
-  })
-  const kpi = {
-    totalUnits: data.length,
-    available: data.filter((t) => t.status === "available").length,
-    borrowed: data.filter((t) => t.status === "borrowed").length,
-    issue: data.filter((t) => t.status === "maintenance" || t.status === "damaged").length,
+  useEffect(() => {
+    queueMicrotask(() => {
+      setSearch(initialFilters.q)
+      setLabFilter(initialFilters.lab)
+      setCategoryFilter(initialFilters.category)
+    })
+  }, [initialFilters.q, initialFilters.lab, initialFilters.category])
+
+  const applyFiltersToUrl = (next?: Partial<{ q: string; lab: string; category: string; page: number }>) => {
+    const params = new URLSearchParams(searchParams.toString())
+    const q = (next?.q ?? search).trim()
+    const lab = next?.lab ?? labFilter
+    const category = next?.category ?? categoryFilter
+    const page = next?.page ?? 1
+
+    if (q) params.set("q", q)
+    else params.delete("q")
+    if (lab && lab !== "all") params.set("lab", lab)
+    else params.delete("lab")
+    if (category && category !== "all") params.set("category", category)
+    else params.delete("category")
+    if (page > 1) params.set("page", String(page))
+    else params.delete("page")
+
+    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    startNavigation(() => {
+      router.replace(target, { scroll: false })
+    })
   }
 
   useEffect(() => {
@@ -301,7 +326,13 @@ export function ToolsPageClient({
           <div className="mb-3 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             Fokus halaman ini: cari unit alat, cek status/kondisi, lalu lakukan edit/QR cetak jika diperlukan.
           </div>
-          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+          <form
+            className="flex flex-col gap-3 sm:flex-row sm:items-center"
+            onSubmit={(e) => {
+              e.preventDefault()
+              applyFiltersToUrl({ page: 1 })
+            }}
+          >
             <div className="relative flex-1">
               <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
               <Input
@@ -315,16 +346,32 @@ export function ToolsPageClient({
               <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Lab" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Lab</SelectItem>
-                {labs.map((lab) => <SelectItem key={lab} value={lab}>{lab}</SelectItem>)}
+                {filterLabs.map((lab) => <SelectItem key={lab} value={lab}>{lab}</SelectItem>)}
               </SelectContent>
             </Select>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
               <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Kategori" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Kategori</SelectItem>
-                {categories.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
+                {filterCategories.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
               </SelectContent>
             </Select>
+            <Button type="submit" variant="outline" disabled={isPendingNavigation}>
+              {isPendingNavigation ? "Memuat..." : "Terapkan"}
+            </Button>
+            <Button
+              type="button"
+              variant="ghost"
+              disabled={isPendingNavigation}
+              onClick={() => {
+                setSearch("")
+                setLabFilter("all")
+                setCategoryFilter("all")
+                applyFiltersToUrl({ q: "", lab: "all", category: "all", page: 1 })
+              }}
+            >
+              Reset
+            </Button>
             {canManage && <Dialog open={showAdd} onOpenChange={setShowAdd}>
               <DialogTrigger asChild>
                 <Button><Plus className="size-4" />Tambah Alat</Button>
@@ -391,12 +438,19 @@ export function ToolsPageClient({
                 </form>
               </DialogContent>
             </Dialog>}
-          </div>
+          </form>
         </CardContent>
       </Card>
 
       <Card className="border-border/50 bg-card shadow-sm">
-        <CardHeader className="pb-3"><CardTitle className="text-base">Daftar Unit Alat ({filtered.length})</CardTitle></CardHeader>
+        <CardHeader className="pb-3">
+          <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+            <CardTitle className="text-base">Daftar Unit Alat ({pagination.totalItems})</CardTitle>
+            <div className="text-xs text-muted-foreground">
+              Halaman {pagination.page} dari {pagination.totalPages} • {pagination.totalItems} data
+            </div>
+          </div>
+        </CardHeader>
         <CardContent className="px-0">
           <div className="px-6 pb-2 text-xs text-muted-foreground">
             Geser tabel ke samping pada layar kecil untuk melihat seluruh kolom dan tombol aksi.
@@ -410,7 +464,7 @@ export function ToolsPageClient({
                 </TableRow>
               </TableHeader>
               <TableBody>
-                {filtered.length === 0 && (
+                {data.length === 0 && (
                   <TableRow>
                     <TableCell colSpan={9} className="py-6">
                       <Empty className="border border-border/50 bg-muted/20 py-8">
@@ -435,7 +489,7 @@ export function ToolsPageClient({
                     </TableCell>
                   </TableRow>
                 )}
-                {filtered.map((tool) => (
+                {data.map((tool) => (
                   <TableRow key={tool.assetId}>
                     <TableCell className="font-mono text-xs">{tool.assetCode}</TableCell>
                     <TableCell><div className="flex flex-col"><span>{tool.name}</span><span className="text-xs text-muted-foreground">{tool.modelCode}</span></div></TableCell>
@@ -470,6 +524,35 @@ export function ToolsPageClient({
                 ))}
               </TableBody>
             </Table>
+          </div>
+          <div className="flex flex-col gap-3 border-t border-border/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+            <p className="text-xs text-muted-foreground">
+              Menampilkan {(pagination.page - 1) * pagination.pageSize + (data.length > 0 ? 1 : 0)}-
+              {(pagination.page - 1) * pagination.pageSize + data.length} dari {pagination.totalItems} unit.
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pagination.page <= 1 || isPendingNavigation}
+                onClick={() => applyFiltersToUrl({ page: pagination.page - 1 })}
+              >
+                Sebelumnya
+              </Button>
+              <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+                {pagination.page}/{pagination.totalPages}
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={pagination.page >= pagination.totalPages || isPendingNavigation}
+                onClick={() => applyFiltersToUrl({ page: pagination.page + 1 })}
+              >
+                Berikutnya
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>

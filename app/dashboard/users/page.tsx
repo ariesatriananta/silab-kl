@@ -1,4 +1,4 @@
-import { asc, desc, eq, inArray, or } from "drizzle-orm"
+import { asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import { redirect } from "next/navigation"
 
 import {
@@ -13,13 +13,23 @@ import { labs, securityAuditLogs, userLabAssignments, users } from "@/lib/db/sch
 
 export const dynamic = "force-dynamic"
 
-export default async function UsersManagementPage() {
+export default async function UsersManagementPage({
+  searchParams,
+}: {
+  searchParams?: Promise<Record<string, string | string[] | undefined>>
+}) {
   const session = await getServerAuthSession()
   if (!session?.user?.id || session.user.role !== "admin") {
     redirect("/dashboard")
   }
 
-  const [userRows, labRows, assignmentRows, auditRows] = await Promise.all([
+  const sp = (await searchParams) ?? {}
+  const auditPageRaw = Array.isArray(sp.auditPage) ? sp.auditPage[0] : sp.auditPage
+  const auditPage = Math.max(1, Number.parseInt(auditPageRaw ?? "1", 10) || 1)
+  const auditPageSize = 25
+  const auditOffset = (auditPage - 1) * auditPageSize
+
+  const [userRows, labRows, assignmentRows, auditRows, auditCountRows] = await Promise.all([
     db
       .select({
         id: users.id,
@@ -56,7 +66,12 @@ export default async function UsersManagementPage() {
       .from(securityAuditLogs)
       .where(or(eq(securityAuditLogs.category, "user_management"), eq(securityAuditLogs.targetType, "user")))
       .orderBy(desc(securityAuditLogs.createdAt))
-      .limit(150),
+      .limit(auditPageSize)
+      .offset(auditOffset),
+    db
+      .select({ total: sql<number>`count(*)` })
+      .from(securityAuditLogs)
+      .where(or(eq(securityAuditLogs.category, "user_management"), eq(securityAuditLogs.targetType, "user"))),
   ])
 
   const assignmentsByUser = assignmentRows.reduce<Record<string, string[]>>((acc, row) => {
@@ -116,5 +131,20 @@ export default async function UsersManagementPage() {
     metadataSummary: row.metadataJson,
   }))
 
-  return <UsersPageClient rows={rows} labs={labsOptions} auditRows={userAuditRows} />
+  const auditTotalItems = Number(auditCountRows[0]?.total ?? 0)
+  const auditTotalPages = Math.max(1, Math.ceil(auditTotalItems / auditPageSize))
+
+  return (
+    <UsersPageClient
+      rows={rows}
+      labs={labsOptions}
+      auditRows={userAuditRows}
+      auditPagination={{
+        page: Math.min(auditPage, auditTotalPages),
+        pageSize: auditPageSize,
+        totalItems: auditTotalItems,
+        totalPages: auditTotalPages,
+      }}
+    />
+  )
 }

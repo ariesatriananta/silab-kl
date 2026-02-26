@@ -200,7 +200,7 @@ export function AppSidebar() {
             <p className="text-[11px] leading-snug text-sidebar-foreground/70">
               Sistem Informasi Laboratorium
               <br />
-              Jurusan Kesling
+              Jurusan Kesehatan Lingkungan
             </p>
             <p className="mt-1.5 text-[10px] leading-snug text-sidebar-foreground/60">
               © {new Date().getFullYear()} Poltekkes Kemenkes

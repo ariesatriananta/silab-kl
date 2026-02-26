@@ -1,6 +1,7 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { AlertTriangle, CheckCircle2, Eye, Package, Plus, TrendingDown, XCircle } from "lucide-react"
 
 import {
@@ -131,6 +132,7 @@ export function ConsumablesPageClient({
   stockMovements,
   masterLabs,
   createOptions,
+  pagination,
 }: {
   role: "admin" | "mahasiswa" | "petugas_plp"
   currentUserId: string
@@ -142,7 +144,15 @@ export function ConsumablesPageClient({
     labs: ConsumableCreateLabOption[]
     items: ConsumableCreateItemOption[]
   }
+  pagination: {
+    requests: { page: number; pageSize: number; totalItems: number; totalPages: number }
+    movements: { page: number; pageSize: number; totalItems: number; totalPages: number }
+  }
 }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [pagingPending, startPagingTransition] = useTransition()
   const [createOpen, setCreateOpen] = useState(false)
   const [createMasterOpen, setCreateMasterOpen] = useState(false)
   const [editingConsumable, setEditingConsumable] = useState<ConsumableStockRow | null>(null)
@@ -225,6 +235,17 @@ export function ConsumablesPageClient({
       }),
     [qtyMap],
   )
+
+  const goToConsumablesPage = (kind: "requests" | "movements", page: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    const key = kind === "requests" ? "reqPage" : "movPage"
+    if (page > 1) params.set(key, String(page))
+    else params.delete(key)
+    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    startPagingTransition(() => {
+      router.replace(target, { scroll: false })
+    })
+  }
 
   useEffect(() => {
     const states = [
@@ -689,7 +710,12 @@ export function ConsumablesPageClient({
           </Card>
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-card-foreground">Permintaan Bahan</CardTitle>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle className="text-base font-semibold text-card-foreground">Permintaan Bahan</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Halaman {pagination.requests.page}/{pagination.requests.totalPages} • {pagination.requests.totalItems} permintaan
+                </p>
+              </div>
             </CardHeader>
             <CardContent className="px-0">
               <div className="px-6 pb-2 text-xs text-muted-foreground">
@@ -792,6 +818,36 @@ export function ConsumablesPageClient({
                   </TableBody>
                 </Table>
               </div>
+              <div className="flex flex-col gap-3 border-t border-border/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Menampilkan {(pagination.requests.page - 1) * pagination.requests.pageSize + (materialRequests.length > 0 ? 1 : 0)}-
+                  {(pagination.requests.page - 1) * pagination.requests.pageSize + materialRequests.length} dari{" "}
+                  {pagination.requests.totalItems} permintaan (filter cepat berlaku pada halaman ini).
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.requests.page <= 1 || pagingPending}
+                    onClick={() => goToConsumablesPage("requests", pagination.requests.page - 1)}
+                  >
+                    Sebelumnya
+                  </Button>
+                  <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+                    {pagination.requests.page}/{pagination.requests.totalPages}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.requests.page >= pagination.requests.totalPages || pagingPending}
+                    onClick={() => goToConsumablesPage("requests", pagination.requests.page + 1)}
+                  >
+                    {pagingPending ? "Memuat..." : "Berikutnya"}
+                  </Button>
+                </div>
+              </div>
             </CardContent>
           </Card>
         </TabsContent>
@@ -802,7 +858,12 @@ export function ConsumablesPageClient({
           </div>
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-card-foreground">Histori Pergerakan Stok</CardTitle>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle className="text-base font-semibold text-card-foreground">Histori Pergerakan Stok</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Halaman {pagination.movements.page}/{pagination.movements.totalPages} • {pagination.movements.totalItems} log
+                </p>
+              </div>
             </CardHeader>
             <CardContent className="px-0">
               <div className="px-6 pb-2 text-xs text-muted-foreground">
@@ -865,6 +926,36 @@ export function ConsumablesPageClient({
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+              <div className="flex flex-col gap-3 border-t border-border/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Menampilkan {(pagination.movements.page - 1) * pagination.movements.pageSize + (stockMovements.length > 0 ? 1 : 0)}-
+                  {(pagination.movements.page - 1) * pagination.movements.pageSize + stockMovements.length} dari{" "}
+                  {pagination.movements.totalItems} histori stok.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.movements.page <= 1 || pagingPending}
+                    onClick={() => goToConsumablesPage("movements", pagination.movements.page - 1)}
+                  >
+                    Sebelumnya
+                  </Button>
+                  <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+                    {pagination.movements.page}/{pagination.movements.totalPages}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={pagination.movements.page >= pagination.movements.totalPages || pagingPending}
+                    onClick={() => goToConsumablesPage("movements", pagination.movements.page + 1)}
+                  >
+                    {pagingPending ? "Memuat..." : "Berikutnya"}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

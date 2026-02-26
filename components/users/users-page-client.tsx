@@ -1,6 +1,7 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import {
   ArrowDownAZ,
   ArrowUpAZ,
@@ -214,11 +215,17 @@ export function UsersPageClient({
   rows,
   labs,
   auditRows,
+  auditPagination,
 }: {
   rows: UserManagementRow[]
   labs: UserLabOption[]
   auditRows: UserAuditRow[]
+  auditPagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
 }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [auditPagingPending, startAuditPagingTransition] = useTransition()
   const [activeTab, setActiveTab] = useState<"users" | "audit">("users")
   const [roleFilter, setRoleFilter] = useState<"all" | UserManagementRow["role"]>("all")
   const [sortBy, setSortBy] = useState<"name" | "username" | "createdAt">("name")
@@ -350,6 +357,16 @@ export function UsersPageClient({
       return outcomeMatch && actionMatch && textMatch
     })
   }, [auditActionFilter, auditOutcomeFilter, auditRows, auditSearch])
+
+  const goToAuditPage = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (page > 1) params.set("auditPage", String(page))
+    else params.delete("auditPage")
+    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    startAuditPagingTransition(() => {
+      router.replace(target, { scroll: false })
+    })
+  }
 
   const auditOutcomeBadgeClass: Record<UserAuditRow["outcome"], string> = {
     success: "rounded-full border-success/20 bg-success/10 text-success-foreground",
@@ -684,7 +701,14 @@ export function UsersPageClient({
 
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold">Riwayat Audit Pengguna ({filteredAuditRows.length})</CardTitle>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle className="text-base font-semibold">
+                  Riwayat Audit Pengguna ({filteredAuditRows.length})
+                </CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Halaman {auditPagination.page}/{auditPagination.totalPages} • {auditPagination.totalItems} log audit
+                </p>
+              </div>
             </CardHeader>
             <CardContent className="px-0">
               <div className="px-6 pb-2 text-xs text-muted-foreground">
@@ -752,6 +776,36 @@ export function UsersPageClient({
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+              <div className="flex flex-col gap-3 border-t border-border/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Menampilkan {(auditPagination.page - 1) * auditPagination.pageSize + (auditRows.length > 0 ? 1 : 0)}-
+                  {(auditPagination.page - 1) * auditPagination.pageSize + auditRows.length} dari{" "}
+                  {auditPagination.totalItems} log audit (filter berlaku pada halaman ini).
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={auditPagination.page <= 1 || auditPagingPending}
+                    onClick={() => goToAuditPage(auditPagination.page - 1)}
+                  >
+                    Sebelumnya
+                  </Button>
+                  <div className="rounded-md border border-border/50 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+                    Hal. {auditPagination.page}/{auditPagination.totalPages}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={auditPagination.page >= auditPagination.totalPages || auditPagingPending}
+                    onClick={() => goToAuditPage(auditPagination.page + 1)}
+                  >
+                    {auditPagingPending ? "Memuat..." : "Berikutnya"}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>

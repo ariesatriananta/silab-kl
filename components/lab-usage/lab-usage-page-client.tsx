@@ -1,6 +1,7 @@
 "use client"
 
-import { useActionState, useEffect, useMemo, useRef, useState } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { CalendarDays, Clock, Eye, GraduationCap, Pencil, Plus, Trash2, Users } from "lucide-react"
 
 import {
@@ -90,12 +91,18 @@ export function LabUsagePageClient({
   labs,
   schedules,
   history,
+  historyPagination,
 }: {
   role: Role
   labs: LabUsageLabOption[]
   schedules: LabUsageScheduleRow[]
   history: LabUsageHistoryRow[]
+  historyPagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
 }) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [historyPagingPending, startHistoryPagingTransition] = useTransition()
   const [activeTab, setActiveTab] = useState<"schedule" | "history">("schedule")
   const [createScheduleOpen, setCreateScheduleOpen] = useState(false)
   const [createUsageOpen, setCreateUsageOpen] = useState(false)
@@ -141,6 +148,16 @@ export function LabUsagePageClient({
     history: history.length,
     fullSchedules: schedules.filter((s) => s.enrolledCount >= s.capacity).length,
     noAttendanceLogs: history.filter((h) => h.attendance.length === 0).length,
+  }
+
+  const goToHistoryPage = (page: number) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (page > 1) params.set("histPage", String(page))
+    else params.delete("histPage")
+    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    startHistoryPagingTransition(() => {
+      router.replace(target, { scroll: false })
+    })
   }
 
   useEffect(() => {
@@ -627,7 +644,12 @@ export function LabUsagePageClient({
           </div>
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
-              <CardTitle className="text-base font-semibold text-card-foreground">Riwayat Penggunaan Lab</CardTitle>
+              <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                <CardTitle className="text-base font-semibold text-card-foreground">Riwayat Penggunaan Lab</CardTitle>
+                <p className="text-xs text-muted-foreground">
+                  Halaman {historyPagination.page}/{historyPagination.totalPages} • {historyPagination.totalItems} riwayat
+                </p>
+              </div>
             </CardHeader>
             <CardContent className="px-0">
               <div className="px-6 pb-2 text-xs text-muted-foreground">
@@ -691,6 +713,36 @@ export function LabUsagePageClient({
                     ))}
                   </TableBody>
                 </Table>
+              </div>
+              <div className="flex flex-col gap-3 border-t border-border/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
+                <p className="text-xs text-muted-foreground">
+                  Menampilkan {(historyPagination.page - 1) * historyPagination.pageSize + (history.length > 0 ? 1 : 0)}-
+                  {(historyPagination.page - 1) * historyPagination.pageSize + history.length} dari{" "}
+                  {historyPagination.totalItems} riwayat penggunaan.
+                </p>
+                <div className="flex items-center gap-2">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={historyPagination.page <= 1 || historyPagingPending}
+                    onClick={() => goToHistoryPage(historyPagination.page - 1)}
+                  >
+                    Sebelumnya
+                  </Button>
+                  <div className="rounded-lg border border-border/50 bg-muted/20 px-3 py-1.5 text-xs text-muted-foreground">
+                    {historyPagination.page}/{historyPagination.totalPages}
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={historyPagination.page >= historyPagination.totalPages || historyPagingPending}
+                    onClick={() => goToHistoryPage(historyPagination.page + 1)}
+                  >
+                    {historyPagingPending ? "Memuat..." : "Berikutnya"}
+                  </Button>
+                </div>
               </div>
             </CardContent>
           </Card>
