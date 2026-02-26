@@ -200,3 +200,41 @@ Tujuan: menandai mana yang sudah modern/elegan, mana yang masih parsial, dan pri
 - Status `Polished` di dokumen ini berarti “sudah layak modern/elegan untuk UAT/pilot”, bukan “tidak bisa ditingkatkan lagi”.
 - Fokus berikutnya sebaiknya berpindah dari halaman konten besar ke shell/dialog/microcopy agar konsistensi benar-benar terasa.
 
+
+## Dark Mode Pass (Tambahan Audit)
+
+### Status Umum
+- `Aktif`: toggle dark/light sudah berjalan dari header (sebelah kiri avatar).
+- `Token-based`: mayoritas halaman sudah mengikuti token global (`background/card/muted/border/sidebar`), sehingga dark mode menyebar konsisten.
+- `Polish v1`: palet dark sudah disetel ulang agar lebih nyaman di mata (kontras cukup, tidak terlalu hitam pekat, sidebar lebih terbaca).
+
+### Hasil Audit Cepat Per Halaman (Dark Mode)
+- `/dashboard`: `Baik`
+  - kartu statistik/analytics tetap terbaca
+  - panel fokus harian dan komponen dashboard ikut theme token dengan baik
+- `/dashboard/borrowing`: `Baik`
+  - badge status dan panel helper tetap jelas
+  - dialog panjang tetap terbaca
+- `/dashboard/consumables`: `Baik`
+  - tab, panel helper, tabel, dan dialog proses/detail konsisten
+- `/dashboard/lab-usage`: `Baik`
+  - card jadwal/riwayat dan dialog tetap nyaman
+- `/dashboard/tools`: `Baik`
+  - dialog detail/edit unit dan QR preview tetap readable
+- `/dashboard/users`: `Baik`
+  - tab daftar/audit dan dialog create/edit/reset/detail audit konsisten
+- `/dashboard/student-tools`: `Baik`
+  - katalog dan helper panel tetap jelas
+- `/dashboard/account/profile` dan `/dashboard/account/security`: `Baik`
+  - layout 2 kolom dan card tips/ringkasan tetap nyaman
+- `/borrowing-proof/[id]`: `Cukup`
+  - preview layar tetap usable, tapi target utama tetap layout print
+
+### Temuan / Notes (Dark Mode)
+- Mayoritas UI sudah token-based, sehingga dark mode stabil setelah token `.dark` ditambahkan.
+- Area paling sensitif untuk fine-tuning lanjutan: badge status, panel warning/destructive, dan border halus pada card bertumpuk.
+
+### Prioritas Fine-Tuning Dark Mode (Opsional)
+1. Tuning kontras badge status (warning/success) bila terasa terlalu soft/terlalu tajam.
+2. Tuning sidebar dark mode berdasarkan penggunaan nyata (durasi pakai lama).
+3. Review halaman print preview (opsional, prioritas rendah).

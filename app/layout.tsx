@@ -11,6 +11,12 @@ const inter = Inter({ subsets: ['latin'] })
 export const metadata: Metadata = {
   title: 'SILAB-KL | Poltekkes Kemenkes Surabaya',
   description: 'Sistem Informasi Laboratorium - Jurusan Kesehatan Lingkungan Poltekkes Kemenkes Surabaya',
+  applicationName: 'SILAB-KL',
+  icons: {
+    icon: [{ url: '/icon-logo.png', type: 'image/png' }],
+    shortcut: [{ url: '/icon-logo.png', type: 'image/png' }],
+    apple: [{ url: '/icon-logo.png', type: 'image/png' }],
+  },
 }
 
 export const viewport: Viewport = {

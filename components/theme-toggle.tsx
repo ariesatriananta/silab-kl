@@ -18,6 +18,9 @@ export function ThemeToggle() {
     // fallback manual apply (robust against hydration/provider race)
     if (typeof document !== "undefined") {
       document.documentElement.classList.toggle("dark", nextTheme === "dark")
+      document.body.classList.toggle("dark", nextTheme === "dark")
+      document.documentElement.setAttribute("data-theme", nextTheme)
+      document.body.setAttribute("data-theme", nextTheme)
       try {
         window.localStorage.setItem("theme", nextTheme)
       } catch {
