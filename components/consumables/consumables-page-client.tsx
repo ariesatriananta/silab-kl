@@ -340,7 +340,7 @@ export function ConsumablesPageClient({
   }
 
   return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
+    <div className="min-w-0 overflow-x-hidden flex flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Bahan Habis Pakai</h1>
@@ -721,7 +721,7 @@ export function ConsumablesPageClient({
               <div className="px-6 pb-2 text-xs text-muted-foreground">
                 Geser tabel ke samping pada layar kecil untuk melihat seluruh kolom.
               </div>
-              <div className="overflow-x-auto">
+              <div className="w-full overflow-x-auto">
                 <Table className="min-w-[980px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">
@@ -869,7 +869,7 @@ export function ConsumablesPageClient({
               <div className="px-6 pb-2 text-xs text-muted-foreground">
                 Geser tabel ke samping pada layar kecil untuk melihat detail perubahan stok, petugas, dan nilai sebelum/sesudah.
               </div>
-              <div className="overflow-x-auto">
+              <div className="w-full overflow-x-auto">
                 <Table className="min-w-[1100px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">

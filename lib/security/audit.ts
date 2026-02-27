@@ -6,7 +6,7 @@ type AuditLogInput = {
   action: string
   outcome: "success" | "failure" | "blocked"
   userId?: string | null
-  actorRole?: "admin" | "mahasiswa" | "petugas_plp" | null
+  actorRole?: "admin" | "mahasiswa" | "petugas_plp" | "dosen" | null
   targetType?: string | null
   targetId?: string | null
   identifier?: string | null
@@ -30,4 +30,3 @@ export async function writeSecurityAuditLog(input: AuditLogInput) {
     console.error("writeSecurityAuditLog error:", error)
   }
 }
-

@@ -1,4 +1,4 @@
-export type AppRole = "admin" | "mahasiswa" | "petugas_plp"
+export type AppRole = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
 
 type DashboardRedirectInput = {
   role?: AppRole | null
@@ -32,7 +32,8 @@ export function canAccessLabByAssignment(input: {
   assignedLabIds?: string[]
 }) {
   if (input.role === "admin") return true
-  if (input.role === "petugas_plp") return (input.assignedLabIds ?? []).includes(input.labId)
+  if (input.role === "petugas_plp" || input.role === "dosen") {
+    return (input.assignedLabIds ?? []).includes(input.labId)
+  }
   return false
 }
-

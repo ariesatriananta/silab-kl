@@ -13,7 +13,7 @@ import { labs, toolAssetEvents, toolAssets, toolModels, userLabAssignments, user
 
 export const dynamic = "force-dynamic"
 
-type Role = "admin" | "mahasiswa" | "petugas_plp"
+type Role = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
 
 async function getAccessibleLabIds(role: Role, userId: string) {
   if (role === "admin" || role === "mahasiswa") return null
@@ -237,6 +237,7 @@ export default async function ToolsPage({
 
   const role = session.user.role as Role
   if (role === "mahasiswa") redirect("/dashboard/student-tools")
+  if (role === "dosen") redirect("/dashboard")
 
   const accessibleLabIds = await getAccessibleLabIds(role, session.user.id)
   const params = (await searchParams) ?? {}

@@ -71,7 +71,7 @@ test("RBAC route guard: force change password override role redirect", () => {
   )
 })
 
-test("RBAC route guard: admin dan PLP tidak di-redirect pada halaman dashboard", () => {
+test("RBAC route guard: admin, PLP, dan dosen tidak di-redirect pada halaman dashboard", () => {
   assert.equal(
     getDashboardAccessRedirect({ role: "admin", pathname: "/dashboard/borrowing", mustChangePassword: false }),
     null,
@@ -84,9 +84,17 @@ test("RBAC route guard: admin dan PLP tidak di-redirect pada halaman dashboard",
     }),
     null,
   )
+  assert.equal(
+    getDashboardAccessRedirect({
+      role: "dosen",
+      pathname: "/dashboard/borrowing",
+      mustChangePassword: false,
+    }),
+    null,
+  )
 })
 
-test("RBAC lab access: helper assignment mematuhi role admin/PLP/mahasiswa", async () => {
+test("RBAC lab access: helper assignment mematuhi role admin/PLP/dosen/mahasiswa", async () => {
   const seedUsers = await db
     .select({ id: users.id, username: users.username, role: users.role })
     .from(users)
@@ -126,8 +134,15 @@ test("RBAC lab access: helper assignment mematuhi role admin/PLP/mahasiswa", asy
     false,
   )
   assert.equal(
+    canAccessLabByAssignment({ role: "dosen", labId: assignedLabId, assignedLabIds }),
+    true,
+  )
+  assert.equal(
+    canAccessLabByAssignment({ role: "dosen", labId: unassignedLabId!, assignedLabIds }),
+    false,
+  )
+  assert.equal(
     canAccessLabByAssignment({ role: "mahasiswa", labId: assignedLabId, assignedLabIds }),
     false,
   )
 })
-

@@ -31,7 +31,7 @@ function fmtDateTime(date: Date | null) {
   }).format(date)
 }
 
-type Role = "admin" | "mahasiswa" | "petugas_plp"
+type Role = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
 
 export default async function BorrowingProofPage({
   params,
@@ -75,7 +75,7 @@ export default async function BorrowingProofPage({
   if (!row) notFound()
 
   if (role === "mahasiswa" && row.requesterUserId !== userId) redirect("/dashboard/borrowing")
-  if (role === "petugas_plp") {
+  if (role === "petugas_plp" || role === "dosen") {
     const assignment = await db.query.userLabAssignments.findFirst({
       where: and(eq(userLabAssignments.userId, userId), eq(userLabAssignments.labId, row.labId)),
       columns: { userId: true },

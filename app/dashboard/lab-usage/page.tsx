@@ -12,7 +12,7 @@ import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
 import { labSchedules, labUsageAttendances, labUsageLogs, labs, userLabAssignments } from "@/lib/db/schema"
 
-type Role = "admin" | "mahasiswa" | "petugas_plp"
+type Role = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
 
 function fmtDate(date: Date) {
   return new Intl.DateTimeFormat("id-ID", {
@@ -78,6 +78,7 @@ export default async function LabUsagePage({
 
   const role = session.user.role as Role
   if (role === "mahasiswa") redirect("/dashboard/student-tools")
+  if (role === "dosen") redirect("/dashboard")
 
   const accessibleLabIds = await getAccessibleLabIds(role, session.user.id)
   const scheduleFilter =

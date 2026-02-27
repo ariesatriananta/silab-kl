@@ -4,6 +4,8 @@ import { sql } from "drizzle-orm"
 import { hashPassword } from "../lib/auth/password"
 import { createDb } from "../lib/db/create-db"
 import {
+  borrowingApprovalMatrices,
+  borrowingApprovalMatrixSteps,
   consumableItems,
   labs,
   toolAssets,
@@ -27,6 +29,8 @@ async function truncateAll() {
       borrowing_approvals,
       borrowing_transaction_items,
       borrowing_transactions,
+      borrowing_approval_matrix_steps,
+      borrowing_approval_matrices,
       material_request_items,
       material_requests,
       lab_usage_logs,
@@ -60,6 +64,18 @@ async function main() {
 
   const labByCode = Object.fromEntries(insertedLabs.map((lab) => [lab.code, lab]))
 
+  const insertedMatrices = await db
+    .insert(borrowingApprovalMatrices)
+    .values(insertedLabs.map((lab) => ({ labId: lab.id, isActive: true })))
+    .returning({ id: borrowingApprovalMatrices.id })
+
+  await db.insert(borrowingApprovalMatrixSteps).values(
+    insertedMatrices.flatMap((matrix) => [
+      { matrixId: matrix.id, stepOrder: 1, approverRole: "dosen" as const },
+      { matrixId: matrix.id, stepOrder: 2, approverRole: "petugas_plp" as const },
+    ]),
+  )
+
   const insertedUsers = await db
     .insert(users)
     .values([
@@ -84,6 +100,22 @@ async function main() {
         fullName: "Dr. Hartono",
         email: "hartono@silab-kl.local",
         role: "petugas_plp",
+        passwordHash: defaultPasswordHash,
+      },
+      {
+        username: "dosen.rahma",
+        nip: "198511022012122001",
+        fullName: "Dr. Rahmawati",
+        email: "rahmawati@silab-kl.local",
+        role: "dosen",
+        passwordHash: defaultPasswordHash,
+      },
+      {
+        username: "dosen.budi",
+        nip: "198203142010121003",
+        fullName: "Dr. Budi Santoso",
+        email: "budi.santoso@silab-kl.local",
+        role: "dosen",
         passwordHash: defaultPasswordHash,
       },
       {
@@ -117,6 +149,9 @@ async function main() {
     { userId: userByUsername["plp.suryani"].id, labId: labByCode["LAB-PAR"].id },
     { userId: userByUsername["plp.hartono"].id, labId: labByCode["LAB-KIM"].id },
     { userId: userByUsername["plp.hartono"].id, labId: labByCode["LAB-MIK"].id },
+    { userId: userByUsername["dosen.rahma"].id, labId: labByCode["LAB-HEM"].id },
+    { userId: userByUsername["dosen.rahma"].id, labId: labByCode["LAB-PAR"].id },
+    { userId: userByUsername["dosen.budi"].id, labId: labByCode["LAB-KIM"].id },
   ])
 
   const insertedToolModels = await db

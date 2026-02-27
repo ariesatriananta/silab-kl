@@ -14,7 +14,7 @@ import {
 } from "@/lib/auth/login-rate-limit"
 import { writeSecurityAuditLog } from "@/lib/security/audit"
 
-type AppRole = "admin" | "mahasiswa" | "petugas_plp"
+type AppRole = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
 
 const loginSchema = z.object({
   identifier: z.string().min(1),

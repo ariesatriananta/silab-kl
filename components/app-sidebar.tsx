@@ -12,6 +12,7 @@ import {
   CalendarDays,
   GraduationCap,
   Users,
+  Network,
   Loader2,
 } from "lucide-react"
 import { useState } from "react"
@@ -29,7 +30,7 @@ import {
   SidebarSeparator,
 } from "@/components/ui/sidebar"
 
-type Role = "admin" | "mahasiswa" | "petugas_plp"
+type Role = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
 
 const mainNavItems: Array<{
   title: string
@@ -37,12 +38,13 @@ const mainNavItems: Array<{
   icon: typeof LayoutDashboard
   roles: Role[]
 }> = [
-  { title: "Peminjaman", href: "/dashboard/borrowing", icon: ArrowLeftRight, roles: ["admin", "petugas_plp"] },
+  { title: "Peminjaman", href: "/dashboard/borrowing", icon: ArrowLeftRight, roles: ["admin", "petugas_plp", "dosen"] },
   { title: "Bahan Habis Pakai", href: "/dashboard/consumables", icon: FlaskConical, roles: ["admin", "petugas_plp"] },
   { title: "Penggunaan Lab", href: "/dashboard/lab-usage", icon: CalendarDays, roles: ["admin", "petugas_plp"] },
   { title: "Alat Laboratorium", href: "/dashboard/tools", icon: Wrench, roles: ["admin", "petugas_plp"] },
+  { title: "Approval Matrix", href: "/dashboard/approval-matrix", icon: Network, roles: ["admin"] },
   { title: "Kelola User", href: "/dashboard/users", icon: Users, roles: ["admin"] },
-  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "petugas_plp"] },
+  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "petugas_plp", "dosen"] },
 ]
 
 const studentNavItems: Array<{
@@ -63,7 +65,9 @@ export function AppSidebar() {
   const operasionalNav = visibleMainNav.filter((item) =>
     ["/dashboard/borrowing", "/dashboard/consumables", "/dashboard/lab-usage"].includes(item.href),
   )
-  const masterNav = visibleMainNav.filter((item) => ["/dashboard/tools", "/dashboard/users"].includes(item.href))
+  const masterNav = visibleMainNav.filter((item) =>
+    ["/dashboard/tools", "/dashboard/approval-matrix", "/dashboard/users"].includes(item.href),
+  )
   const monitoringNav = visibleMainNav.filter((item) => item.href === "/dashboard")
 
   const menuButtonClassName =

@@ -57,6 +57,7 @@ async function getActor() {
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) return { error: "Sesi tidak valid." as const }
   if (session.user.role === "mahasiswa") return { error: "Mahasiswa tidak dapat mengelola master alat." as const }
+  if (session.user.role === "dosen") return { error: "Dosen tidak dapat mengelola master alat." as const }
   return { session }
 }
 

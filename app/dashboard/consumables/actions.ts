@@ -90,6 +90,7 @@ async function getActor() {
 }
 
 async function ensureLabAccess(role: string, userId: string, labId: string) {
+  if (role === "dosen") return { ok: false as const, message: "Dosen tidak memiliki akses operasional bahan." }
   if (role === "admin" || role === "mahasiswa") return { ok: true as const }
   const assignment = await db.query.userLabAssignments.findFirst({
     where: and(eq(userLabAssignments.userId, userId), eq(userLabAssignments.labId, labId)),
@@ -102,6 +103,7 @@ async function ensureConsumableManagerForLab(labId: string) {
   const actor = await getActor()
   if ("error" in actor) return { error: actor.error as string }
   const { session } = actor
+  if (session.user.role === "dosen") return { error: "Dosen tidak dapat mengelola bahan." as const }
   if (session.user.role === "mahasiswa") {
     return { error: "Mahasiswa tidak dapat mengelola master bahan." as const }
   }
@@ -114,6 +116,7 @@ async function validateProcessAccess(requestId: string) {
   const actor = await getActor()
   if ("error" in actor) return { error: actor.error as string }
   const { session } = actor
+  if (session.user.role === "dosen") return { error: "Dosen tidak dapat memproses permintaan bahan." as const }
   if (session.user.role === "mahasiswa") return { error: "Mahasiswa tidak dapat memproses permintaan bahan." as const }
 
   const req = await db.query.materialRequests.findFirst({

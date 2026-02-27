@@ -14,7 +14,7 @@ export type UserManagementActionResult = {
   message: string
 }
 
-type AppRole = "admin" | "mahasiswa" | "petugas_plp"
+type AppRole = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
 
 async function requireAdmin() {
   const session = await getServerAuthSession()
@@ -25,7 +25,7 @@ async function requireAdmin() {
 }
 
 function parseRole(input: FormDataEntryValue | null): AppRole | null {
-  if (input === "admin" || input === "mahasiswa" || input === "petugas_plp") return input
+  if (input === "admin" || input === "mahasiswa" || input === "petugas_plp" || input === "dosen") return input
   return null
 }
 
@@ -40,12 +40,12 @@ function parseAssignmentLabIds(raw: FormDataEntryValue | null) {
   }
 }
 
-async function syncPetugasAssignments(params: {
+async function syncAssignedLabs(params: {
   userId: string
   role: AppRole
   assignmentLabIds: string[]
 }) {
-  if (params.role !== "petugas_plp") {
+  if (params.role !== "petugas_plp" && params.role !== "dosen") {
     await db.delete(userLabAssignments).where(eq(userLabAssignments.userId, params.userId))
     return
   }
@@ -113,8 +113,8 @@ export async function createUserManagementAction(
   if (role !== "mahasiswa" && nim) {
     return { ok: false, message: "NIM hanya untuk user mahasiswa." }
   }
-  if (role === "petugas_plp" && assignmentLabIds.length === 0) {
-    return { ok: false, message: "Petugas PLP harus di-assign minimal 1 lab." }
+  if ((role === "petugas_plp" || role === "dosen") && assignmentLabIds.length === 0) {
+    return { ok: false, message: `${role === "dosen" ? "Dosen" : "Petugas PLP"} harus di-assign minimal 1 lab.` }
   }
 
   try {
@@ -133,7 +133,7 @@ export async function createUserManagementAction(
       })
       .returning({ id: users.id })
 
-    await syncPetugasAssignments({
+    await syncAssignedLabs({
       userId: inserted.id,
       role,
       assignmentLabIds,
@@ -193,8 +193,8 @@ export async function updateUserManagementAction(
   if (role !== "mahasiswa" && nim) {
     return { ok: false, message: "NIM hanya untuk user mahasiswa." }
   }
-  if (role === "petugas_plp" && assignmentLabIds.length === 0) {
-    return { ok: false, message: "Petugas PLP harus di-assign minimal 1 lab." }
+  if ((role === "petugas_plp" || role === "dosen") && assignmentLabIds.length === 0) {
+    return { ok: false, message: `${role === "dosen" ? "Dosen" : "Petugas PLP"} harus di-assign minimal 1 lab.` }
   }
 
   try {
@@ -212,7 +212,7 @@ export async function updateUserManagementAction(
       })
       .where(eq(users.id, userId))
 
-    await syncPetugasAssignments({ userId, role, assignmentLabIds })
+    await syncAssignedLabs({ userId, role, assignmentLabIds })
 
     await writeSecurityAuditLog({
       category: "user_management",
@@ -270,4 +270,3 @@ export async function resetUserPasswordAction(
     return { ok: false, message: "Gagal reset password user." }
   }
 }
-

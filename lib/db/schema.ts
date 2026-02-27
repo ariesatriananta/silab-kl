@@ -13,7 +13,7 @@ import {
 } from "drizzle-orm/pg-core"
 
 // Enums
-export const userRoleEnum = pgEnum("user_role", ["admin", "mahasiswa", "petugas_plp"])
+export const userRoleEnum = pgEnum("user_role", ["admin", "mahasiswa", "petugas_plp", "dosen"])
 
 export const toolAssetStatusEnum = pgEnum("tool_asset_status", [
   "available",
@@ -282,6 +282,7 @@ export const borrowingTransactions = pgTable(
     semesterLabel: varchar("semester_label", { length: 50 }).default("").notNull(),
     groupName: varchar("group_name", { length: 50 }).default("").notNull(),
     advisorLecturerName: varchar("advisor_lecturer_name", { length: 200 }),
+    approvalMatrixId: uuid("approval_matrix_id"),
     status: borrowingStatusEnum("status").default("submitted").notNull(),
     requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
@@ -299,6 +300,11 @@ export const borrowingTransactions = pgTable(
     index("borrowing_transactions_lab_idx").on(t.labId),
     index("borrowing_transactions_status_idx").on(t.status),
     index("borrowing_transactions_due_date_idx").on(t.dueDate),
+    index("borrowing_transactions_requester_requested_idx").on(t.requesterUserId, t.requestedAt),
+    index("borrowing_transactions_creator_requested_idx").on(t.createdByUserId, t.requestedAt),
+    index("borrowing_transactions_lab_status_requested_idx").on(t.labId, t.status, t.requestedAt),
+    index("borrowing_transactions_status_requested_idx").on(t.status, t.requestedAt),
+    index("borrowing_transactions_approval_matrix_idx").on(t.approvalMatrixId),
   ],
 )
 
@@ -334,12 +340,47 @@ export const borrowingApprovals = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     decision: approvalDecisionEnum("decision").notNull(),
+    stepOrder: integer("step_order").notNull(),
     decidedAt: timestamp("decided_at", { withTimezone: true }).defaultNow().notNull(),
     note: text("note"),
   },
   (t) => [
     index("borrowing_approvals_tx_idx").on(t.transactionId),
+    index("borrowing_approvals_tx_decision_idx").on(t.transactionId, t.decision),
     uniqueIndex("borrowing_approvals_tx_approver_uq").on(t.transactionId, t.approverUserId),
+    uniqueIndex("borrowing_approvals_tx_step_uq").on(t.transactionId, t.stepOrder),
+  ],
+)
+
+export const borrowingApprovalMatrices = pgTable(
+  "borrowing_approval_matrices",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    labId: uuid("lab_id")
+      .notNull()
+      .references(() => labs.id, { onDelete: "cascade" }),
+    isActive: boolean("is_active").default(false).notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [uniqueIndex("borrowing_approval_matrices_lab_uq").on(t.labId)],
+)
+
+export const borrowingApprovalMatrixSteps = pgTable(
+  "borrowing_approval_matrix_steps",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    matrixId: uuid("matrix_id")
+      .notNull()
+      .references(() => borrowingApprovalMatrices.id, { onDelete: "cascade" }),
+    stepOrder: integer("step_order").notNull(),
+    approverRole: userRoleEnum("approver_role").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("borrowing_approval_matrix_steps_matrix_step_uq").on(t.matrixId, t.stepOrder),
+    index("borrowing_approval_matrix_steps_matrix_idx").on(t.matrixId),
   ],
 )
 

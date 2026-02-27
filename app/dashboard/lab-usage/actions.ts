@@ -77,6 +77,7 @@ async function ensureNonMahasiswaAndLabAccess(labId: string) {
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) return { error: "Sesi tidak valid." as const }
   if (session.user.role === "mahasiswa") return { error: "Akses ditolak." as const }
+  if (session.user.role === "dosen") return { error: "Dosen tidak memiliki akses operasional penggunaan lab." as const }
 
   if (session.user.role === "petugas_plp") {
     const assignment = await db.query.userLabAssignments.findFirst({
@@ -235,6 +236,9 @@ export async function deleteLabScheduleWithFeedbackAction(
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role || session.user.role === "mahasiswa") {
     return { ok: false, message: "Akses ditolak." }
+  }
+  if (session.user.role === "dosen") {
+    return { ok: false, message: "Dosen tidak memiliki akses operasional penggunaan lab." }
   }
 
   const schedule = await db.query.labSchedules.findFirst({

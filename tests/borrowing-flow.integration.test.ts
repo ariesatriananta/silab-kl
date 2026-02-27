@@ -34,16 +34,18 @@ async function getSeedUsers() {
   const rows = await db
     .select({ id: users.id, username: users.username })
     .from(users)
-    .where(inArray(users.username, ["admin", "plp.suryani", "P27834021001"]))
+    .where(inArray(users.username, ["admin", "plp.suryani", "dosen.rahma", "P27834021001"]))
 
   const map = new Map(rows.map((r) => [r.username, r]))
   const admin = map.get("admin")
   const plp = map.get("plp.suryani")
+  const dosen = map.get("dosen.rahma") ?? admin
   const mahasiswa = map.get("P27834021001")
   assert.ok(admin)
   assert.ok(plp)
+  assert.ok(dosen)
   assert.ok(mahasiswa)
-  return { admin, plp, mahasiswa }
+  return { admin, plp, dosen, mahasiswa }
 }
 
 async function getAnyLab() {
@@ -79,7 +81,7 @@ async function cleanupBorrowingArtifacts(params: {
 }
 
 test("integration: happy path borrowing (2 approval -> handover -> partial return -> complete)", async () => {
-  const { admin, plp, mahasiswa } = await getSeedUsers()
+  const { admin, plp, dosen, mahasiswa } = await getSeedUsers()
   const lab = await getAnyLab()
 
   let borrowingId: string | null = null
@@ -197,8 +199,9 @@ test("integration: happy path borrowing (2 approval -> handover -> partial retur
 
     await db.insert(borrowingApprovals).values({
       transactionId: borrowing.id,
-      approverUserId: admin.id,
+      approverUserId: dosen.id,
       decision: "approved",
+      stepOrder: 1,
     })
     await db
       .update(borrowingTransactions)
@@ -209,6 +212,7 @@ test("integration: happy path borrowing (2 approval -> handover -> partial retur
       transactionId: borrowing.id,
       approverUserId: plp.id,
       decision: "approved",
+      stepOrder: 2,
     })
     await db
       .update(borrowingTransactions)
@@ -356,7 +360,7 @@ test("integration: happy path borrowing (2 approval -> handover -> partial retur
 })
 
 test("integration: approver yang sama tidak boleh approve dua kali (unique index)", async () => {
-  const { admin, mahasiswa } = await getSeedUsers()
+  const { dosen, mahasiswa } = await getSeedUsers()
   const lab = await getAnyLab()
 
   let borrowingId: string | null = null
@@ -367,7 +371,7 @@ test("integration: approver yang sama tidak boleh approve dua kali (unique index
         code: randomCode("BRW-DUPAPP"),
         labId: lab.id,
         requesterUserId: mahasiswa.id,
-        createdByUserId: admin.id,
+        createdByUserId: dosen.id,
         purpose: "Duplicate approver test",
         courseName: "Test",
         materialTopic: "Test",
@@ -381,16 +385,18 @@ test("integration: approver yang sama tidak boleh approve dua kali (unique index
 
     await db.insert(borrowingApprovals).values({
       transactionId: borrowing.id,
-      approverUserId: admin.id,
+      approverUserId: dosen.id,
       decision: "approved",
+      stepOrder: 1,
     })
 
     let duplicateBlocked = false
     try {
       await db.insert(borrowingApprovals).values({
         transactionId: borrowing.id,
-        approverUserId: admin.id,
+        approverUserId: dosen.id,
         decision: "approved",
+        stepOrder: 1,
       })
     } catch (error) {
       duplicateBlocked = error instanceof Error
@@ -402,7 +408,7 @@ test("integration: approver yang sama tidak boleh approve dua kali (unique index
 })
 
 test("integration: handover should remain waiting when consumable stock insufficient (precondition state)", async () => {
-  const { admin, plp, mahasiswa } = await getSeedUsers()
+  const { admin, plp, dosen, mahasiswa } = await getSeedUsers()
   const lab = await getAnyLab()
 
   let borrowingId: string | null = null
@@ -449,8 +455,8 @@ test("integration: handover should remain waiting when consumable stock insuffic
       qtyRequested: 5,
     })
     await db.insert(borrowingApprovals).values([
-      { transactionId: borrowing.id, approverUserId: admin.id, decision: "approved" },
-      { transactionId: borrowing.id, approverUserId: plp.id, decision: "approved" },
+      { transactionId: borrowing.id, approverUserId: dosen.id, decision: "approved", stepOrder: 1 },
+      { transactionId: borrowing.id, approverUserId: plp.id, decision: "approved", stepOrder: 2 },
     ])
 
     const [line] = await db

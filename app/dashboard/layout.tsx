@@ -37,6 +37,10 @@ const pageMeta: Record<string, { title: string; subtitle: string }> = {
     title: "Kelola User",
     subtitle: "Akses akun, role, dan assignment laboratorium",
   },
+  "/dashboard/approval-matrix": {
+    title: "Approval Matrix",
+    subtitle: "Pengaturan urutan approval peminjaman per laboratorium",
+  },
   "/dashboard/account/profile": {
     title: "Profil Saya",
     subtitle: "Perbarui informasi akun Anda",
@@ -58,7 +62,7 @@ export default function DashboardLayout({
   return (
     <SidebarProvider>
       <AppSidebar />
-      <SidebarInset className="bg-gradient-to-b from-muted/15 to-background">
+      <SidebarInset className="min-w-0 bg-gradient-to-b from-muted/15 to-background">
         <header className="sticky top-0 z-20 flex min-h-16 items-center gap-3 border-b border-border/60 bg-background/85 px-4 backdrop-blur supports-[backdrop-filter]:bg-background/70 lg:px-6">
           <SidebarTrigger className="-ml-1 rounded-lg border border-border/60 bg-background shadow-sm hover:bg-muted/40" />
           <Separator orientation="vertical" className="h-7" />
@@ -77,7 +81,7 @@ export default function DashboardLayout({
             <HeaderUserMenu />
           </div>
         </header>
-        <div className="flex-1 overflow-auto">
+        <div className="min-w-0 flex-1 overflow-y-auto overflow-x-hidden">
           {children}
         </div>
       </SidebarInset>

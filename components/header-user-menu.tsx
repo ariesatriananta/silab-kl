@@ -22,7 +22,13 @@ export function HeaderUserMenu() {
   const displayEmail = session?.user?.email ?? session?.user?.username ?? "-"
   const role = session?.user?.role ?? "mahasiswa"
   const roleLabel =
-    role === "admin" ? "Admin" : role === "petugas_plp" ? "Petugas PLP" : "Mahasiswa"
+    role === "admin"
+      ? "Admin"
+      : role === "petugas_plp"
+        ? "Petugas PLP"
+        : role === "dosen"
+          ? "Dosen"
+          : "Mahasiswa"
   const initials =
     displayName
       .split(" ")

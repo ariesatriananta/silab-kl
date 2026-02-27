@@ -257,7 +257,7 @@ export function ToolsPageClient({
   const detailEvents = showDetail ? eventMap.get(showDetail.assetId) ?? [] : []
 
   return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
+    <div className="min-w-0 overflow-x-hidden flex flex-col gap-6 p-4 lg:p-6">
       <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-card to-muted/30 p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
@@ -455,7 +455,7 @@ export function ToolsPageClient({
           <div className="px-6 pb-2 text-xs text-muted-foreground">
             Geser tabel ke samping pada layar kecil untuk melihat seluruh kolom dan tombol aksi.
           </div>
-          <div className="overflow-x-auto">
+          <div className="w-full overflow-x-auto">
             <Table className="min-w-[980px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">

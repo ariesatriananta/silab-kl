@@ -189,7 +189,7 @@ Langkah:
    - kategori: `Pipet`
    - lab: pilih salah satu lab aktif
    - lokasi detail: `Rak A1`
-   - unit count: `2`
+   - unit count: `2`    
 5. Simpan
 6. Pastikan muncul 2 unit asset di tabel tools
 7. Buka `QR` salah satu unit -> cek preview QR tampil

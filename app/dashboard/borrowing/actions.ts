@@ -8,6 +8,8 @@ import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
 import {
   borrowingApprovals,
+  borrowingApprovalMatrices,
+  borrowingApprovalMatrixSteps,
   borrowingHandoverConsumableLines,
   borrowingHandovers,
   borrowingReturnItems,
@@ -23,6 +25,36 @@ import {
   users,
 } from "@/lib/db/schema"
 import { writeSecurityAuditLog } from "@/lib/security/audit"
+
+const BORROWING_APPROVAL_FLOW = [
+  { stepOrder: 1, role: "dosen" as const },
+  { stepOrder: 2, role: "petugas_plp" as const },
+]
+
+async function getActiveBorrowingMatrixForLab(labId: string) {
+  const matrix = await db.query.borrowingApprovalMatrices.findFirst({
+    where: and(eq(borrowingApprovalMatrices.labId, labId), eq(borrowingApprovalMatrices.isActive, true)),
+    columns: { id: true, labId: true, isActive: true },
+  })
+  if (!matrix) return null
+
+  const steps = await db
+    .select({
+      stepOrder: borrowingApprovalMatrixSteps.stepOrder,
+      approverRole: borrowingApprovalMatrixSteps.approverRole,
+    })
+    .from(borrowingApprovalMatrixSteps)
+    .where(eq(borrowingApprovalMatrixSteps.matrixId, matrix.id))
+    .orderBy(borrowingApprovalMatrixSteps.stepOrder)
+
+  if (steps.length !== BORROWING_APPROVAL_FLOW.length) return null
+  for (const required of BORROWING_APPROVAL_FLOW) {
+    const actual = steps.find((s) => s.stepOrder === required.stepOrder)
+    if (!actual || actual.approverRole !== required.role) return null
+  }
+
+  return { matrix, steps }
+}
 
 const createBorrowingRequestSchema = z.object({
   labId: z.string().uuid(),
@@ -149,8 +181,11 @@ export async function createBorrowingRequestAction(
   if (role === "mahasiswa" && requesterUserId !== actorUserId) {
     return { ok: false, message: "Mahasiswa hanya dapat membuat pengajuan untuk akun sendiri." }
   }
+  if (role === "dosen") {
+    return { ok: false, message: "Dosen tidak dapat membuat pengajuan peminjaman." }
+  }
 
-  const [labExists, requester, actorAssignment] = await Promise.all([
+  const [labExists, requester, actorAssignment, matrixConfig] = await Promise.all([
     db.query.labs.findFirst({
       where: and(eq(labs.id, labId), eq(labs.isActive, true)),
       columns: { id: true },
@@ -165,10 +200,18 @@ export async function createBorrowingRequestAction(
           columns: { labId: true },
         })
       : Promise.resolve(null),
+    getActiveBorrowingMatrixForLab(labId),
   ])
 
   if (!labExists) return { ok: false, message: "Lab tidak ditemukan atau nonaktif." }
   if (!requester) return { ok: false, message: "Peminjam tidak ditemukan." }
+  if (!matrixConfig) {
+    return {
+      ok: false,
+      message:
+        "Matrix approval lab belum aktif atau tidak valid. Hubungi admin untuk setting urutan Dosen -> Petugas PLP.",
+    }
+  }
   if (requester.role !== "mahasiswa") {
     return { ok: false, message: "Peminjam harus akun mahasiswa." }
   }
@@ -227,6 +270,7 @@ export async function createBorrowingRequestAction(
         .values({
           code: generateBorrowingCode(),
           labId,
+          approvalMatrixId: matrixConfig.matrix.id,
           requesterUserId,
           createdByUserId: actorUserId,
           purpose: parsed.data.purpose.trim(),
@@ -304,8 +348,8 @@ async function validateApprovalActorAndTransaction(transactionId: string) {
     return { error: "Sesi tidak valid." as const }
   }
 
-  if (session.user.role === "mahasiswa") {
-    return { error: "Mahasiswa tidak dapat memproses approval." as const }
+  if (session.user.role !== "dosen" && session.user.role !== "petugas_plp") {
+    return { error: "Hanya Dosen atau Petugas PLP yang dapat memproses approval." as const }
   }
 
   const txRow = await db.query.borrowingTransactions.findFirst({
@@ -314,6 +358,7 @@ async function validateApprovalActorAndTransaction(transactionId: string) {
       id: true,
       labId: true,
       status: true,
+      approvalMatrixId: true,
     },
   })
 
@@ -323,21 +368,62 @@ async function validateApprovalActorAndTransaction(transactionId: string) {
     return { error: "Transaksi tidak dalam status pending approval." as const }
   }
 
-  if (session.user.role === "petugas_plp") {
-    const assignment = await db.query.userLabAssignments.findFirst({
-      where: and(
-        eq(userLabAssignments.userId, session.user.id),
-        eq(userLabAssignments.labId, txRow.labId),
-      ),
-      columns: { userId: true },
-    })
+  const assignment = await db.query.userLabAssignments.findFirst({
+    where: and(eq(userLabAssignments.userId, session.user.id), eq(userLabAssignments.labId, txRow.labId)),
+    columns: { userId: true },
+  })
+  if (!assignment) {
+    return { error: "Anda tidak memiliki akses approval untuk lab transaksi ini." as const }
+  }
 
-    if (!assignment) {
-      return { error: "Anda tidak memiliki akses approval untuk lab transaksi ini." as const }
+  if (!txRow.approvalMatrixId) {
+    return { error: "Transaksi belum memiliki matrix approval. Hubungi admin." as const }
+  }
+
+  const stepRows = await db
+    .select({
+      stepOrder: borrowingApprovalMatrixSteps.stepOrder,
+      approverRole: borrowingApprovalMatrixSteps.approverRole,
+    })
+    .from(borrowingApprovalMatrixSteps)
+    .where(eq(borrowingApprovalMatrixSteps.matrixId, txRow.approvalMatrixId))
+    .orderBy(borrowingApprovalMatrixSteps.stepOrder)
+
+  if (
+    stepRows.length !== BORROWING_APPROVAL_FLOW.length ||
+    stepRows[0]?.stepOrder !== 1 ||
+    stepRows[0]?.approverRole !== "dosen" ||
+    stepRows[1]?.stepOrder !== 2 ||
+    stepRows[1]?.approverRole !== "petugas_plp"
+  ) {
+    return { error: "Matrix approval transaksi tidak valid. Hubungi admin." as const }
+  }
+
+  const approvedRows = await db
+    .select({
+      stepOrder: borrowingApprovals.stepOrder,
+      approverRole: users.role,
+    })
+    .from(borrowingApprovals)
+    .innerJoin(users, eq(users.id, borrowingApprovals.approverUserId))
+    .where(and(eq(borrowingApprovals.transactionId, txRow.id), eq(borrowingApprovals.decision, "approved")))
+
+  const approvedStepSet = new Set(approvedRows.map((r) => r.stepOrder))
+  const nextStep = BORROWING_APPROVAL_FLOW.find((flowStep) => !approvedStepSet.has(flowStep.stepOrder))
+  if (!nextStep) {
+    return { error: "Approval sudah lengkap untuk transaksi ini." as const }
+  }
+
+  if (session.user.role !== nextStep.role) {
+    return {
+      error:
+        nextStep.role === "dosen"
+          ? "Approval tahap 1 wajib dilakukan Dosen."
+          : "Approval tahap 2 wajib dilakukan Petugas PLP setelah Dosen.",
     }
   }
 
-  return { session, txRow }
+  return { session, txRow, nextStepOrder: nextStep.stepOrder }
 }
 
 export async function approveBorrowingAction(formData: FormData) {
@@ -363,7 +449,7 @@ export async function approveBorrowingWithFeedbackAction(
   const validated = await validateApprovalActorAndTransaction(parsed.data.transactionId)
   if ("error" in validated) return { ok: false, message: validated.error ?? "Approval tidak dapat diproses." }
 
-  const { session, txRow } = validated
+  const { session, txRow, nextStepOrder } = validated
 
   try {
     await db.transaction(async (tx) => {
@@ -371,6 +457,7 @@ export async function approveBorrowingWithFeedbackAction(
         transactionId: txRow.id,
         approverUserId: session.user.id,
         decision: "approved",
+        stepOrder: nextStepOrder,
         note: parsed.data.note?.trim() || null,
       })
 
@@ -389,8 +476,8 @@ export async function approveBorrowingWithFeedbackAction(
       await tx
         .update(borrowingTransactions)
         .set({
-          status: approvalCount >= 2 ? "approved_waiting_handover" : "pending_approval",
-          approvedAt: approvalCount >= 2 ? new Date() : null,
+          status: approvalCount >= BORROWING_APPROVAL_FLOW.length ? "approved_waiting_handover" : "pending_approval",
+          approvedAt: approvalCount >= BORROWING_APPROVAL_FLOW.length ? new Date() : null,
           updatedAt: new Date(),
         })
         .where(eq(borrowingTransactions.id, txRow.id))
@@ -447,7 +534,7 @@ export async function rejectBorrowingWithFeedbackAction(
   const validated = await validateApprovalActorAndTransaction(parsed.data.transactionId)
   if ("error" in validated) return { ok: false, message: validated.error ?? "Penolakan tidak dapat diproses." }
 
-  const { session, txRow } = validated
+  const { session, txRow, nextStepOrder } = validated
 
   try {
     await db.transaction(async (tx) => {
@@ -455,6 +542,7 @@ export async function rejectBorrowingWithFeedbackAction(
         transactionId: txRow.id,
         approverUserId: session.user.id,
         decision: "rejected",
+        stepOrder: nextStepOrder,
         note: parsed.data.note?.trim() || null,
       })
 
@@ -527,6 +615,7 @@ export async function handoverBorrowingAction(
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) return { ok: false, message: "Sesi tidak valid." }
   if (session.user.role === "mahasiswa") return { ok: false, message: "Akses ditolak." }
+  if (session.user.role === "dosen") return { ok: false, message: "Dosen tidak dapat memproses serah terima." }
 
   const txRow = await db.query.borrowingTransactions.findFirst({
     where: eq(borrowingTransactions.id, parsed.data.transactionId),
@@ -566,7 +655,7 @@ export async function handoverBorrowingAction(
           ),
         )
       const approvalCount = Number(approvalCountRows[0]?.count ?? 0)
-      if (approvalCount < 2) {
+      if (approvalCount < BORROWING_APPROVAL_FLOW.length) {
         throw new Error("Approval belum lengkap.")
       }
 
@@ -748,6 +837,7 @@ export async function returnBorrowingToolAction(
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) return { ok: false, message: "Sesi tidak valid." }
   if (session.user.role === "mahasiswa") return { ok: false, message: "Akses ditolak." }
+  if (session.user.role === "dosen") return { ok: false, message: "Dosen tidak dapat memproses pengembalian." }
 
   const txRow = await db.query.borrowingTransactions.findFirst({
     where: eq(borrowingTransactions.id, parsed.data.transactionId),

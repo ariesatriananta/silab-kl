@@ -23,7 +23,7 @@ import {
 
 export const dynamic = "force-dynamic"
 
-type Role = "admin" | "mahasiswa" | "petugas_plp"
+type Role = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
 
 async function getAccessibleLabIds(role: Role, userId: string) {
   if (role === "admin" || role === "mahasiswa") return null
@@ -276,6 +276,7 @@ export default async function ConsumablesPage({
   if (!session?.user?.id || !session.user.role) redirect("/")
 
   const role = session.user.role as Role
+  if (role === "dosen") redirect("/dashboard")
   const accessibleLabIds = await getAccessibleLabIds(role, session.user.id)
   const sp = (await searchParams) ?? {}
   const getSingle = (key: string) => {

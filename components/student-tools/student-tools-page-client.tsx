@@ -45,7 +45,7 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
   const filteredAvailableCount = filtered.filter((t) => t.available > 0).length
 
   return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
+    <div className="min-w-0 overflow-x-hidden flex flex-col gap-6 p-4 lg:p-6">
       <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-card to-muted/30 p-5 shadow-sm">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">

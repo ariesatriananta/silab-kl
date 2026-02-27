@@ -2,8 +2,22 @@
 
 import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react"
-import { AlertTriangle, CheckCircle2, Clock, Eye, Package, Plus, Printer, XCircle } from "lucide-react"
+import { useActionState, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import {
+  AlertTriangle,
+  CheckCircle2,
+  Clock,
+  Eye,
+  FlaskConical,
+  Minus,
+  Package,
+  PackagePlus,
+  Plus,
+  Printer,
+  Search,
+  Trash2,
+  XCircle,
+} from "lucide-react"
 
 import {
   approveBorrowingAction,
@@ -80,15 +94,38 @@ const statusConfig: Record<DisplayStatus, { label: string; className: string }> 
   cancelled: { label: "Dibatalkan", className: "rounded-full bg-muted text-muted-foreground border-border" },
 }
 
+const approvalTriageConfig: Record<
+  "step1_ready" | "step2_ready" | "blocked_matrix" | "unknown",
+  { label: string; className: string }
+> = {
+  step1_ready: {
+    label: "Siap Tahap 1",
+    className: "rounded-full border-primary/20 bg-primary/10 text-primary",
+  },
+  step2_ready: {
+    label: "Siap Tahap 2",
+    className: "rounded-full border-success/20 bg-success/10 text-success-foreground",
+  },
+  blocked_matrix: {
+    label: "Blocked Matrix",
+    className: "rounded-full border-destructive/20 bg-destructive/10 text-destructive",
+  },
+  unknown: {
+    label: "Cek Status",
+    className: "rounded-full border-border bg-muted text-muted-foreground",
+  },
+}
+
 const approvalDecisionLabel: Record<"approved" | "rejected", string> = {
   approved: "Disetujui",
   rejected: "Ditolak",
 }
 
-const roleLabel: Record<"admin" | "mahasiswa" | "petugas_plp", string> = {
+const roleLabel: Record<"admin" | "mahasiswa" | "petugas_plp" | "dosen", string> = {
   admin: "Admin",
   mahasiswa: "Mahasiswa",
   petugas_plp: "Petugas PLP",
+  dosen: "Dosen",
 }
 
 const returnConditionLabel: Record<"baik" | "maintenance" | "damaged", string> = {
@@ -170,6 +207,9 @@ export type BorrowingListRow = {
   groupName: string
   advisorLecturerName: string | null
   itemCount: number
+  pendingApprovalLabel: string | null
+  pendingApprovalApprovers: string[]
+  pendingApprovalTriage: "step1_ready" | "step2_ready" | "blocked_matrix" | "unknown" | null
 }
 
 export type BorrowingDetail = {
@@ -189,6 +229,9 @@ export type BorrowingDetail = {
   dueDate: string | null
   labName: string
   approvalsCount: number
+  pendingApprovalLabel: string | null
+  pendingApprovalApprovers: string[]
+  pendingApprovalTriage: "step1_ready" | "step2_ready" | "blocked_matrix" | "unknown" | null
   items: Array<{
     id: string
     itemType: "tool_asset" | "consumable"
@@ -201,7 +244,7 @@ export type BorrowingDetail = {
   }>
   approvalHistory: Array<{
     approverName: string
-    approverRole: "admin" | "mahasiswa" | "petugas_plp"
+    approverRole: "admin" | "mahasiswa" | "petugas_plp" | "dosen"
     decision: "approved" | "rejected"
     decidedAt: string
     note: string | null
@@ -236,6 +279,16 @@ export type BorrowingCreateConsumableOption = {
   stockQty: number
   unit: string
 }
+export type BorrowingCreateApprovalRouteOption = {
+  labId: string
+  matrixActive: boolean
+  matrixValid: boolean
+  isReady: boolean
+  step1Role: "dosen" | null
+  step2Role: "petugas_plp" | null
+  dosenApprovers: Array<{ id: string; name: string; identifier: string | null }>
+  plpApprovers: Array<{ id: string; name: string; identifier: string | null }>
+}
 
 export function BorrowingPageClient({
   role,
@@ -248,7 +301,7 @@ export function BorrowingPageClient({
   initialListFilters,
   prefill,
 }: {
-  role: "admin" | "mahasiswa" | "petugas_plp"
+  role: "admin" | "mahasiswa" | "petugas_plp" | "dosen"
   currentUserId: string
   accessibleLabIds: string[] | null
   rows: BorrowingListRow[]
@@ -258,9 +311,13 @@ export function BorrowingPageClient({
     requesters: BorrowingCreateRequesterOption[]
     tools: BorrowingCreateToolOption[]
     consumables: BorrowingCreateConsumableOption[]
+    approvalRoutes: BorrowingCreateApprovalRouteOption[]
   }
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
-  initialListFilters: { status: DisplayStatus | "all" | "approved_waiting_handover"; scope: "all" | "mine" | "my_labs" }
+  initialListFilters: {
+    status: DisplayStatus | "all" | "approved_waiting_handover"
+    scope: "all" | "mine" | "my_labs" | "waiting_me"
+  }
   prefill?: {
     openCreate?: boolean
     labId?: string
@@ -272,7 +329,7 @@ export function BorrowingPageClient({
   const searchParams = useSearchParams()
   const [pagingPending, startPagingTransition] = useTransition()
   const [statusFilter, setStatusFilter] = useState<string>(initialListFilters.status)
-  const [scopeFilter, setScopeFilter] = useState<"all" | "mine" | "my_labs">(initialListFilters.scope)
+  const [scopeFilter, setScopeFilter] = useState<"all" | "mine" | "my_labs" | "waiting_me">(initialListFilters.scope)
   const [selectedBorrowingId, setSelectedBorrowingId] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedLabId, setSelectedLabId] = useState(createOptions.labs[0]?.id ?? "")
@@ -281,6 +338,10 @@ export function BorrowingPageClient({
   )
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>([])
   const [consumableQtyMap, setConsumableQtyMap] = useState<Record<string, number>>({})
+  const [toolQuery, setToolQuery] = useState("")
+  const [consumableQuery, setConsumableQuery] = useState("")
+  const [toolVisibleCount, setToolVisibleCount] = useState(30)
+  const [consumableVisibleCount, setConsumableVisibleCount] = useState(30)
   const [courseName, setCourseName] = useState("")
   const [materialTopic, setMaterialTopic] = useState("")
   const [semesterLabel, setSemesterLabel] = useState("")
@@ -314,8 +375,9 @@ export function BorrowingPageClient({
   const { toast } = useToast()
   const feedbackRef = useRef<string[]>([])
 
-  const canApprove = role === "admin" || role === "petugas_plp"
+  const canApprove = role === "petugas_plp" || role === "dosen"
   const canHandover = role === "admin" || role === "petugas_plp"
+  const canCreate = role !== "dosen"
   const isMahasiswa = role === "mahasiswa"
 
   useEffect(() => {
@@ -349,6 +411,62 @@ export function BorrowingPageClient({
     () => createOptions.consumables.filter((item) => item.labId === selectedLabId),
     [createOptions.consumables, selectedLabId],
   )
+  const toolById = useMemo(() => new Map(createOptions.tools.map((t) => [t.id, t])), [createOptions.tools])
+  const consumableById = useMemo(
+    () => new Map(createOptions.consumables.map((c) => [c.id, c])),
+    [createOptions.consumables],
+  )
+  const selectedTools = useMemo(
+    () => selectedToolIds.map((id) => toolById.get(id)).filter(Boolean) as BorrowingCreateToolOption[],
+    [selectedToolIds, toolById],
+  )
+  const selectedConsumableIds = useMemo(
+    () =>
+      Object.entries(consumableQtyMap)
+        .filter(([, qty]) => qty > 0)
+        .map(([id]) => id),
+    [consumableQtyMap],
+  )
+  const selectedConsumables = useMemo(
+    () =>
+      selectedConsumableIds
+        .map((id) => ({ id, item: consumableById.get(id), qty: consumableQtyMap[id] ?? 0 }))
+        .filter((entry) => entry.item) as Array<{ id: string; item: BorrowingCreateConsumableOption; qty: number }>,
+    [selectedConsumableIds, consumableById, consumableQtyMap],
+  )
+  const deferredToolQuery = useDeferredValue(toolQuery)
+  const deferredConsumableQuery = useDeferredValue(consumableQuery)
+  const selectedApprovalRoute = useMemo(
+    () => createOptions.approvalRoutes.find((route) => route.labId === selectedLabId) ?? null,
+    [createOptions.approvalRoutes, selectedLabId],
+  )
+  const isApprovalRouteReady = selectedApprovalRoute?.isReady ?? false
+  const toolSearchResults = useMemo(() => {
+    const q = deferredToolQuery.trim().toLowerCase()
+    return availableToolsForLab
+      .filter((item) => !selectedToolIds.includes(item.id))
+      .filter((item) => (q ? item.label.toLowerCase().includes(q) : true))
+      .slice(0, toolVisibleCount)
+  }, [availableToolsForLab, deferredToolQuery, selectedToolIds, toolVisibleCount])
+  const toolSearchTotal = useMemo(() => {
+    const q = deferredToolQuery.trim().toLowerCase()
+    return availableToolsForLab
+      .filter((item) => !selectedToolIds.includes(item.id))
+      .filter((item) => (q ? item.label.toLowerCase().includes(q) : true)).length
+  }, [availableToolsForLab, deferredToolQuery, selectedToolIds])
+  const consumableSearchResults = useMemo(() => {
+    const q = deferredConsumableQuery.trim().toLowerCase()
+    return availableConsumablesForLab
+      .filter((item) => !selectedConsumableIds.includes(item.id))
+      .filter((item) => (q ? item.label.toLowerCase().includes(q) : true))
+      .slice(0, consumableVisibleCount)
+  }, [availableConsumablesForLab, consumableVisibleCount, deferredConsumableQuery, selectedConsumableIds])
+  const consumableSearchTotal = useMemo(() => {
+    const q = deferredConsumableQuery.trim().toLowerCase()
+    return availableConsumablesForLab
+      .filter((item) => !selectedConsumableIds.includes(item.id))
+      .filter((item) => (q ? item.label.toLowerCase().includes(q) : true)).length
+  }, [availableConsumablesForLab, deferredConsumableQuery, selectedConsumableIds])
   const itemsPayload = useMemo(
     () =>
       JSON.stringify({
@@ -389,14 +507,18 @@ export function BorrowingPageClient({
     })
   }
 
-  const applyListFilters = (next: Partial<{ status: string; scope: "all" | "mine" | "my_labs"; page: number }>) => {
+  const applyListFilters = (next: Partial<{ status: string; scope: "all" | "mine" | "my_labs" | "waiting_me"; page: number }>) => {
     const params = new URLSearchParams(searchParams.toString())
     const nextStatus = next.status ?? statusFilter
     const nextScope = next.scope ?? scopeFilter
     const nextPage = next.page ?? 1
     if (nextStatus !== "all") params.set("status", nextStatus)
     else params.delete("status")
-    if (nextScope !== (role === "petugas_plp" ? "my_labs" : role === "mahasiswa" ? "mine" : "all")) params.set("scope", nextScope)
+    if (
+      nextScope !==
+      (role === "petugas_plp" || role === "dosen" ? "waiting_me" : role === "mahasiswa" ? "mine" : "all")
+    )
+      params.set("scope", nextScope)
     else params.delete("scope")
     if (nextPage > 1) params.set("page", String(nextPage))
     else params.delete("page")
@@ -410,13 +532,10 @@ export function BorrowingPageClient({
     setSelectedLabId(labId)
     setSelectedToolIds([])
     setConsumableQtyMap({})
-  }
-
-  const toggleToolSelection = (toolId: string, checked: boolean) => {
-    setSelectedToolIds((prev) => {
-      if (checked) return Array.from(new Set([...prev, toolId]))
-      return prev.filter((id) => id !== toolId)
-    })
+    setToolQuery("")
+    setConsumableQuery("")
+    setToolVisibleCount(30)
+    setConsumableVisibleCount(30)
   }
 
   const setConsumableQty = (consumableId: string, qty: number) => {
@@ -424,6 +543,38 @@ export function BorrowingPageClient({
       ...prev,
       [consumableId]: Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 0,
     }))
+  }
+  const addTool = (toolId: string) => {
+    setSelectedToolIds((prev) => (prev.includes(toolId) ? prev : [...prev, toolId]))
+  }
+  const removeTool = (toolId: string) => {
+    setSelectedToolIds((prev) => prev.filter((id) => id !== toolId))
+  }
+  const addConsumable = (consumableId: string) => {
+    setConsumableQtyMap((prev) => ({
+      ...prev,
+      [consumableId]: prev[consumableId] && prev[consumableId] > 0 ? prev[consumableId] : 1,
+    }))
+  }
+  const incrementConsumableQty = (consumableId: string) => {
+    setConsumableQtyMap((prev) => ({
+      ...prev,
+      [consumableId]: (prev[consumableId] ?? 0) + 1,
+    }))
+  }
+  const decrementConsumableQty = (consumableId: string) => {
+    setConsumableQtyMap((prev) => {
+      const current = prev[consumableId] ?? 0
+      if (current <= 1) return prev
+      return { ...prev, [consumableId]: current - 1 }
+    })
+  }
+  const removeConsumable = (consumableId: string) => {
+    setConsumableQtyMap((prev) => {
+      const next = { ...prev }
+      delete next[consumableId]
+      return next
+    })
   }
 
   useEffect(() => {
@@ -452,6 +603,10 @@ export function BorrowingPageClient({
       setCreateOpen(false)
       setSelectedToolIds([])
       setConsumableQtyMap({})
+      setToolQuery("")
+      setConsumableQuery("")
+      setToolVisibleCount(30)
+      setConsumableVisibleCount(30)
       setCourseName("")
       setMaterialTopic("")
       setSemesterLabel("")
@@ -482,7 +637,7 @@ export function BorrowingPageClient({
   }, [createOptions.labs, createOptions.tools, prefill])
 
   return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
+    <div className="min-w-0 overflow-x-hidden flex flex-col gap-6 p-4 lg:p-6">
       <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
         <div>
           <h1 className="text-xl font-semibold text-foreground">Peminjaman</h1>
@@ -492,7 +647,7 @@ export function BorrowingPageClient({
               : "Kelola pengajuan, approval, serah terima, dan pengembalian alat/bahan secara bertahap."}
           </p>
         </div>
-        <div className="shrink-0">
+        {canCreate && <div className="shrink-0">
         <Dialog open={createOpen} onOpenChange={setCreateOpen}>
           <DialogTrigger asChild>
             <Button className="shrink-0">
@@ -500,7 +655,7 @@ export function BorrowingPageClient({
               Buat Pengajuan
             </Button>
           </DialogTrigger>
-          <DialogContent className="max-w-xl max-h-[90vh] overflow-y-auto">
+          <DialogContent className="max-w-[95vw] md:max-w-[50vw] max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Buat Pengajuan Peminjaman</DialogTitle>
               <DialogDescription>
@@ -533,6 +688,53 @@ export function BorrowingPageClient({
                     ))}
                   </SelectContent>
                 </Select>
+              </div>
+              <div
+                className={`rounded-xl border px-3 py-3 text-sm ${
+                  isApprovalRouteReady
+                    ? "border-success/25 bg-success/5"
+                    : "border-warning/25 bg-warning/5"
+                }`}
+              >
+                <p className="font-medium text-foreground">Rute Approval Lab</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                  <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Tahap 1</p>
+                    <p className="text-sm font-medium text-foreground">Dosen</p>
+                    {selectedApprovalRoute?.dosenApprovers.length ? (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedApprovalRoute.dosenApprovers
+                          .map((item) =>
+                            item.identifier ? `${item.name} (${item.identifier})` : item.name,
+                          )
+                          .join(", ")}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Belum ada dosen ter-assign.</p>
+                    )}
+                  </div>
+                  <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
+                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Tahap 2</p>
+                    <p className="text-sm font-medium text-foreground">Petugas PLP</p>
+                    {selectedApprovalRoute?.plpApprovers.length ? (
+                      <p className="text-xs text-muted-foreground">
+                        {selectedApprovalRoute.plpApprovers
+                          .map((item) =>
+                            item.identifier ? `${item.name} (${item.identifier})` : item.name,
+                          )
+                          .join(", ")}
+                      </p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">Belum ada petugas PLP ter-assign.</p>
+                    )}
+                  </div>
+                </div>
+                {!isApprovalRouteReady && (
+                  <p className="mt-2 text-xs text-warning-foreground">
+                    Matrix approval lab belum siap. Admin harus aktifkan matrix urutan Dosen ke Petugas PLP dan assign
+                    user pada lab ini.
+                  </p>
+                )}
               </div>
               <div className="grid gap-2">
                 <Label htmlFor="requesterUserId">Peminjam (Mahasiswa)</Label>
@@ -623,50 +825,201 @@ export function BorrowingPageClient({
 
               <Separator />
 
-              <div className="grid gap-2">
-                <Label>Alat (bisa pilih lebih dari satu)</Label>
-                <div className="max-h-44 space-y-2 overflow-auto rounded-md border border-border p-3">
-                  {availableToolsForLab.length === 0 && (
-                    <p className="text-sm text-muted-foreground">Tidak ada alat tersedia untuk lab ini.</p>
-                  )}
-                  {availableToolsForLab.map((tool) => {
-                    const checked = selectedToolIds.includes(tool.id)
-                    return (
-                      <label key={tool.id} className="flex cursor-pointer items-start gap-2 text-sm">
-                        <input
-                          type="checkbox"
-                          checked={checked}
-                          onChange={(e) => toggleToolSelection(tool.id, e.target.checked)}
-                          className="mt-0.5"
-                        />
-                        <span>{tool.label}</span>
-                      </label>
-                    )
-                  })}
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid gap-3 rounded-xl border border-border/70 bg-white/90 p-4 dark:bg-muted/20">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Katalog Alat</Label>
+                    <Badge variant="outline" className="rounded-full">
+                      {toolSearchTotal} tersedia
+                    </Badge>
+                  </div>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="pl-9"
+                      value={toolQuery}
+                      onChange={(e) => {
+                        setToolQuery(e.target.value)
+                        setToolVisibleCount(30)
+                      }}
+                      placeholder="Cari alat (nama/kode unit/model)..."
+                    />
+                  </div>
+                  <div className="max-h-52 space-y-2 overflow-auto rounded-lg border border-border/70 bg-white p-2 dark:bg-card">
+                    {toolSearchResults.length === 0 && (
+                      <p className="px-2 py-3 text-sm text-muted-foreground">Tidak ada alat yang cocok / tersedia.</p>
+                    )}
+                    {toolSearchResults.map((tool) => (
+                      <button
+                        key={tool.id}
+                        type="button"
+                        onClick={() => addTool(tool.id)}
+                        className="flex w-full items-center justify-between gap-3 rounded-lg border border-transparent bg-background px-3 py-2 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                      >
+                        <p className="text-sm text-foreground">{tool.label}</p>
+                        <span className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                          <PackagePlus className="size-3" />
+                          Tambah
+                        </span>
+                      </button>
+                    ))}
+                    {toolSearchTotal > toolSearchResults.length && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setToolVisibleCount((prev) => prev + 30)}
+                      >
+                        Lihat lebih banyak ({toolSearchTotal - toolSearchResults.length} tersisa)
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-xl border border-border/60 bg-background p-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Alat Terpilih</Label>
+                    <Badge variant="outline" className="rounded-full">
+                      {selectedTools.length} item
+                    </Badge>
+                  </div>
+                  <div className="max-h-52 space-y-2 overflow-auto rounded-lg border border-border/70 bg-muted/10 p-2">
+                    {selectedTools.length === 0 && (
+                      <p className="px-2 py-3 text-sm text-muted-foreground">Belum ada alat dipilih.</p>
+                    )}
+                    {selectedTools.map((tool) => (
+                      <div key={tool.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
+                        <p className="text-sm text-foreground">{tool.label}</p>
+                        <Button type="button" size="icon" variant="ghost" className="size-8" onClick={() => removeTool(tool.id)}>
+                          <Trash2 className="size-4" />
+                        </Button>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               </div>
 
-              <div className="grid gap-2">
-                <Label>Bahan Habis Pakai (isi qty &gt; 0 untuk menambahkan)</Label>
-                <div className="max-h-52 space-y-2 overflow-auto rounded-md border border-border p-3">
-                  {availableConsumablesForLab.length === 0 && (
-                    <p className="text-sm text-muted-foreground">Tidak ada bahan untuk lab ini.</p>
-                  )}
-                  {availableConsumablesForLab.map((item) => (
-                    <div key={item.id} className="grid grid-cols-[1fr_90px] items-center gap-3">
-                      <div className="text-sm">
-                        <p className="text-foreground">{item.label}</p>
+              <div className="grid gap-4 lg:grid-cols-2">
+                <div className="grid gap-3 rounded-xl border border-border/70 bg-white/90 p-4 dark:bg-muted/20">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Katalog Bahan Habis Pakai</Label>
+                    <Badge variant="outline" className="rounded-full">
+                      {consumableSearchTotal} tersedia
+                    </Badge>
+                  </div>
+                  <div className="relative">
+                    <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                    <Input
+                      className="pl-9"
+                      value={consumableQuery}
+                      onChange={(e) => {
+                        setConsumableQuery(e.target.value)
+                        setConsumableVisibleCount(30)
+                      }}
+                      placeholder="Cari bahan / satuan..."
+                    />
+                  </div>
+                  <div className="max-h-56 space-y-2 overflow-auto rounded-lg border border-border/70 bg-white p-2 dark:bg-card">
+                    {consumableSearchResults.length === 0 && (
+                      <p className="px-2 py-3 text-sm text-muted-foreground">Tidak ada bahan yang cocok / tersedia.</p>
+                    )}
+                    {consumableSearchResults.map((item) => (
+                      <button
+                        key={item.id}
+                        type="button"
+                        onClick={() => addConsumable(item.id)}
+                        className="flex w-full items-center justify-between gap-3 rounded-lg border border-transparent bg-background px-3 py-2 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                      >
+                        <div className="space-y-0.5">
+                          <p className="text-sm text-foreground">{item.label}</p>
+                          <p className="text-xs text-muted-foreground">
+                            Stok: {item.stockQty} {item.unit}
+                          </p>
+                        </div>
+                        <span className="inline-flex items-center gap-1 rounded-md border border-primary/20 bg-primary/10 px-2 py-1 text-xs font-medium text-primary">
+                          <FlaskConical className="size-3" />
+                          Tambah
+                        </span>
+                      </button>
+                    ))}
+                    {consumableSearchTotal > consumableSearchResults.length && (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="w-full"
+                        onClick={() => setConsumableVisibleCount((prev) => prev + 30)}
+                      >
+                        Lihat lebih banyak ({consumableSearchTotal - consumableSearchResults.length} tersisa)
+                      </Button>
+                    )}
+                  </div>
+                </div>
+
+                <div className="grid gap-3 rounded-xl border border-border/60 bg-background p-4">
+                  <div className="flex items-center justify-between">
+                    <Label className="text-sm font-medium">Bahan Terpilih</Label>
+                    <Badge variant="outline" className="rounded-full">
+                      {selectedConsumables.length} item
+                    </Badge>
+                  </div>
+                  <div className="max-h-56 space-y-2 overflow-auto rounded-lg border border-border/70 bg-muted/10 p-2">
+                    {selectedConsumables.length === 0 && (
+                      <p className="px-2 py-3 text-sm text-muted-foreground">Belum ada bahan dipilih.</p>
+                    )}
+                    {selectedConsumables.map(({ id, item, qty }) => (
+                      <div key={id} className="space-y-2 rounded-lg border border-border/60 bg-card px-3 py-2">
+                        <div className="flex items-start justify-between gap-3">
+                          <p className="text-sm text-foreground">{item.label}</p>
+                          <Button type="button" size="icon" variant="ghost" className="size-8" onClick={() => removeConsumable(id)}>
+                            <Trash2 className="size-4" />
+                          </Button>
+                        </div>
+                        <div className="flex items-center justify-between gap-3">
+                          <p className="text-xs text-muted-foreground">
+                            Stok: {item.stockQty} {item.unit}
+                          </p>
+                          <div className="flex items-center rounded-md border border-border/70">
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="size-8 rounded-none rounded-l-md"
+                              onClick={() => decrementConsumableQty(id)}
+                              disabled={qty <= 1}
+                            >
+                              <Minus className="size-4" />
+                            </Button>
+                            <Input
+                              type="number"
+                              min={1}
+                              value={qty}
+                              onChange={(e) => setConsumableQty(id, Number(e.target.value))}
+                              className="h-8 w-20 rounded-none border-0 text-center focus-visible:ring-0"
+                            />
+                            <Button
+                              type="button"
+                              size="icon"
+                              variant="ghost"
+                              className="size-8 rounded-none rounded-r-md"
+                              onClick={() => incrementConsumableQty(id)}
+                            >
+                              <Plus className="size-4" />
+                            </Button>
+                          </div>
+                        </div>
                       </div>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={consumableQtyMap[item.id] ?? 0}
-                        onChange={(e) => setConsumableQty(item.id, Number(e.target.value))}
-                      />
-                    </div>
-                  ))}
+                    ))}
+                  </div>
                 </div>
               </div>
+
+              {(selectedTools.length === 0 && selectedConsumables.length === 0) && (
+                <div className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-warning-foreground">
+                  Pilih minimal 1 alat atau 1 bahan sebelum kirim pengajuan.
+                </div>
+              )}
 
               <input type="hidden" name="itemsPayload" value={itemsPayload} />
 
@@ -678,14 +1031,14 @@ export function BorrowingPageClient({
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={createPending}>
                   Batal
                 </Button>
-                <Button type="submit" disabled={createPending}>
+                <Button type="submit" disabled={createPending || !isApprovalRouteReady}>
                   {createPending ? "Menyimpan..." : "Kirim Pengajuan"}
                 </Button>
               </div>
             </form>
           </DialogContent>
         </Dialog>
-        </div>
+        </div>}
       </div>
 
       <div className={`grid gap-3 ${role === "mahasiswa" ? "" : "lg:grid-cols-[1fr_320px]"}`}>
@@ -843,8 +1196,8 @@ export function BorrowingPageClient({
               <Select
                 value={scopeFilter}
                 onValueChange={(v) => {
-                  setScopeFilter(v as "all" | "mine" | "my_labs")
-                  applyListFilters({ scope: v as "all" | "mine" | "my_labs", page: 1 })
+                  setScopeFilter(v as "all" | "mine" | "my_labs" | "waiting_me")
+                  applyListFilters({ scope: v as "all" | "mine" | "my_labs" | "waiting_me", page: 1 })
                 }}
               >
                 <SelectTrigger className="w-full bg-card xl:w-56">
@@ -852,6 +1205,9 @@ export function BorrowingPageClient({
                 </SelectTrigger>
                 <SelectContent>
                   {role === "admin" && <SelectItem value="all">Semua Transaksi</SelectItem>}
+                  {(role === "dosen" || role === "petugas_plp") && (
+                    <SelectItem value="waiting_me">Menunggu Saya</SelectItem>
+                  )}
                   <SelectItem value="mine">Milik Saya</SelectItem>
                   <SelectItem value="my_labs" disabled={!accessibleLabIds || accessibleLabIds.length === 0}>
                     Lab Saya
@@ -914,8 +1270,8 @@ export function BorrowingPageClient({
               ? "Geser tabel ke samping pada layar kecil untuk melihat detail status dan tanggal."
               : "Geser tabel ke samping pada layar kecil untuk melihat seluruh kolom dan aksi."}
           </div>
-          <div className="overflow-x-auto">
-            <Table className={isMahasiswa ? "min-w-[820px]" : "min-w-[1080px]"}>
+          <div className="w-full overflow-x-auto">
+            <Table className={isMahasiswa ? "min-w-[820px]" : "min-w-[1120px]"}>
               <TableHeader>
                 <TableRow className="bg-muted/50">
                   <TableHead className="font-semibold">Kode Transaksi</TableHead>
@@ -924,6 +1280,7 @@ export function BorrowingPageClient({
                   <TableHead className="font-semibold">Tgl Pinjam</TableHead>
                   <TableHead className="font-semibold">Tgl Kembali</TableHead>
                   <TableHead className="font-semibold">Status</TableHead>
+                  {!isMahasiswa && <TableHead className="font-semibold">Menunggu Approval</TableHead>}
                   <TableHead className="font-semibold">Keperluan</TableHead>
                   <TableHead className="text-right font-semibold">Aksi</TableHead>
                 </TableRow>
@@ -931,7 +1288,7 @@ export function BorrowingPageClient({
               <TableBody>
                 {filtered.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={isMahasiswa ? 6 : 8} className="py-6">
+                    <TableCell colSpan={isMahasiswa ? 6 : 9} className="py-6">
                       <Empty className="border border-border/50 bg-muted/20 py-8">
                         <EmptyHeader>
                           <EmptyMedia variant="icon">
@@ -946,10 +1303,10 @@ export function BorrowingPageClient({
                         </EmptyHeader>
                         <EmptyContent>
                           <div className="flex flex-wrap items-center justify-center gap-2">
-                            <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
+                            {canCreate && <Button type="button" size="sm" onClick={() => setCreateOpen(true)}>
                               <Plus className="size-4" />
                               Buat Pengajuan
-                            </Button>
+                            </Button>}
                             {isMahasiswa && (
                               <Button type="button" size="sm" variant="outline" asChild>
                                 <Link href="/dashboard/student-tools">Buka Katalog Alat</Link>
@@ -980,6 +1337,29 @@ export function BorrowingPageClient({
                           {status.label}
                         </Badge>
                       </TableCell>
+                      {!isMahasiswa && (
+                        <TableCell className="max-w-[260px]">
+                          {borrow.pendingApprovalLabel ? (
+                            <div className="space-y-0.5">
+                              <div className="flex items-center gap-2">
+                                <p className="truncate text-xs font-medium text-foreground">{borrow.pendingApprovalLabel}</p>
+                                {borrow.pendingApprovalTriage && (
+                                  <Badge variant="outline" className={approvalTriageConfig[borrow.pendingApprovalTriage].className}>
+                                    {approvalTriageConfig[borrow.pendingApprovalTriage].label}
+                                  </Badge>
+                                )}
+                              </div>
+                              <p className="truncate text-[11px] text-muted-foreground">
+                                {borrow.pendingApprovalApprovers.length > 0
+                                  ? borrow.pendingApprovalApprovers.join(", ")
+                                  : "Belum ada approver ter-assign"}
+                              </p>
+                            </div>
+                          ) : (
+                            <span className="text-xs text-muted-foreground">-</span>
+                          )}
+                        </TableCell>
+                      )}
                       <TableCell className={`${isMahasiswa ? "max-w-[160px]" : "max-w-[220px]"} truncate text-muted-foreground`}>
                         {borrow.purpose}
                       </TableCell>
@@ -1167,6 +1547,24 @@ export function BorrowingPageClient({
                       <div>
                         <p className="text-muted-foreground">Jumlah Approval</p>
                         <p className="text-foreground">{selectedBorrowing.approvalsCount}/2</p>
+                      </div>
+                      <div className="sm:col-span-2">
+                        <p className="text-muted-foreground">Approval Aktif Saat Ini</p>
+                        <div className="flex items-center gap-2">
+                          <p className="text-foreground">{selectedBorrowing.pendingApprovalLabel ?? "-"}</p>
+                          {selectedBorrowing.pendingApprovalTriage && (
+                            <Badge variant="outline" className={approvalTriageConfig[selectedBorrowing.pendingApprovalTriage].className}>
+                              {approvalTriageConfig[selectedBorrowing.pendingApprovalTriage].label}
+                            </Badge>
+                          )}
+                        </div>
+                        {selectedBorrowing.pendingApprovalLabel && (
+                          <p className="text-xs text-muted-foreground">
+                            {selectedBorrowing.pendingApprovalApprovers.length > 0
+                              ? selectedBorrowing.pendingApprovalApprovers.join(", ")
+                              : "Belum ada approver ter-assign"}
+                          </p>
+                        )}
                       </div>
                     </div>
                   </div>

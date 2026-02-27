@@ -12,6 +12,8 @@ export default async function AccountProfilePage() {
       ? "Admin"
       : session.user.role === "petugas_plp"
         ? "Petugas PLP"
+        : session.user.role === "dosen"
+          ? "Dosen"
         : "Mahasiswa"
 
   return (
@@ -23,4 +25,3 @@ export default async function AccountProfilePage() {
     />
   )
 }
-

@@ -52,7 +52,7 @@ export type UserManagementRow = {
   id: string
   username: string
   fullName: string
-  role: "admin" | "mahasiswa" | "petugas_plp"
+  role: "admin" | "mahasiswa" | "petugas_plp" | "dosen"
   email: string | null
   nip: string | null
   nim: string | null
@@ -79,12 +79,14 @@ const roleLabel: Record<UserManagementRow["role"], string> = {
   admin: "Admin",
   mahasiswa: "Mahasiswa",
   petugas_plp: "Petugas PLP",
+  dosen: "Dosen",
 }
 
 const roleBadgeClass: Record<UserManagementRow["role"], string> = {
   admin: "rounded-full border-primary/20 bg-primary/10 text-primary",
   mahasiswa: "rounded-full border-border/50 bg-muted/40 text-muted-foreground",
   petugas_plp: "rounded-full border-success/20 bg-success/10 text-success-foreground",
+  dosen: "rounded-full border-warning/20 bg-warning/10 text-warning-foreground",
 }
 
 const auditActionLabel: Record<string, string> = {
@@ -143,6 +145,7 @@ function UserFormFields({
             <SelectContent>
               <SelectItem value="admin">Admin</SelectItem>
               <SelectItem value="petugas_plp">Petugas PLP</SelectItem>
+              <SelectItem value="dosen">Dosen</SelectItem>
               <SelectItem value="mahasiswa">Mahasiswa</SelectItem>
             </SelectContent>
           </Select>
@@ -186,7 +189,7 @@ function UserFormFields({
         </div>
       </div>
 
-      {role === "petugas_plp" && (
+      {(role === "petugas_plp" || role === "dosen") && (
         <div className="grid gap-2">
           <Label>Assignment Laboratorium (minimal 1)</Label>
           <div className="grid gap-2 rounded-xl border border-border/50 bg-muted/30 p-3 sm:grid-cols-2">
@@ -201,7 +204,7 @@ function UserFormFields({
             })}
           </div>
           <p className="text-xs text-muted-foreground">
-            Assignment ini dipakai untuk membatasi akses operasional Petugas PLP ke lab tertentu.
+            Assignment ini dipakai untuk membatasi akses operasional {role === "dosen" ? "Dosen" : "Petugas PLP"} ke lab tertentu.
           </p>
         </div>
       )}
@@ -340,6 +343,7 @@ export function UsersPageClient({
     total: rows.length,
     active: rows.filter((r) => r.isActive).length,
     plp: rows.filter((r) => r.role === "petugas_plp").length,
+    dosen: rows.filter((r) => r.role === "dosen").length,
     mahasiswa: rows.filter((r) => r.role === "mahasiswa").length,
   }
 
@@ -375,13 +379,13 @@ export function UsersPageClient({
   }
 
   return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
+    <div className="min-w-0 overflow-x-hidden flex flex-col gap-6 p-4 lg:p-6">
       <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-card to-muted/30 p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
             <h1 className="text-xl font-semibold text-foreground">Kelola User</h1>
             <p className="mt-1 text-sm text-muted-foreground">
-              Kelola akun admin, petugas PLP, dan mahasiswa termasuk assignment laboratorium untuk petugas PLP.
+              Kelola akun admin, petugas PLP, dosen, dan mahasiswa termasuk assignment laboratorium untuk petugas operasional.
             </p>
           </div>
           <div className="rounded-xl border border-border/50 bg-background/70 px-4 py-3 text-sm text-muted-foreground">
@@ -412,8 +416,8 @@ export function UsersPageClient({
                     labs={labs}
                     role={createRole}
                     setRole={(nextRole) => {
-                      setCreateRole(nextRole)
-                      if (nextRole !== "petugas_plp") setCreateAssignments([])
+                    setCreateRole(nextRole)
+                      if (nextRole !== "petugas_plp" && nextRole !== "dosen") setCreateAssignments([])
                     }}
                     assignmentLabIds={createAssignments}
                     setAssignmentLabIds={setCreateAssignments}
@@ -435,10 +439,11 @@ export function UsersPageClient({
         </div>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
+      <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
         <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Pengguna</p><p className="mt-1 text-lg font-semibold">{summary.total}</p></CardContent></Card>
         <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Pengguna Aktif</p><p className="mt-1 text-lg font-semibold">{summary.active}</p></CardContent></Card>
         <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Petugas PLP</p><p className="mt-1 text-lg font-semibold">{summary.plp}</p></CardContent></Card>
+        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Dosen</p><p className="mt-1 text-lg font-semibold">{summary.dosen}</p></CardContent></Card>
         <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Mahasiswa</p><p className="mt-1 text-lg font-semibold">{summary.mahasiswa}</p></CardContent></Card>
       </div>
 
@@ -495,6 +500,7 @@ export function UsersPageClient({
                     <SelectItem value="all">Semua Role</SelectItem>
                     <SelectItem value="admin">Admin</SelectItem>
                     <SelectItem value="petugas_plp">Petugas PLP</SelectItem>
+                    <SelectItem value="dosen">Dosen</SelectItem>
                     <SelectItem value="mahasiswa">Mahasiswa</SelectItem>
                   </SelectContent>
                 </Select>
@@ -542,7 +548,7 @@ export function UsersPageClient({
           <div className="px-6 pb-2 text-xs text-muted-foreground">
             Geser tabel ke samping pada layar kecil untuk melihat seluruh kolom.
           </div>
-          <div className="overflow-x-auto">
+          <div className="w-full overflow-x-auto">
             <Table className="min-w-[1200px]">
               <TableHeader>
                 <TableRow className="bg-muted/50">
@@ -592,7 +598,7 @@ export function UsersPageClient({
                     </TableCell>
                     <TableCell className="text-xs text-muted-foreground">{row.nim ?? row.nip ?? "-"}</TableCell>
                     <TableCell>
-                      {row.role === "petugas_plp" ? (
+                      {row.role === "petugas_plp" || row.role === "dosen" ? (
                         row.assignedLabNames.length > 0 ? (
                           <div className="flex max-w-[240px] flex-wrap gap-1">
                             {row.assignedLabNames.map((lab) => (
@@ -714,7 +720,7 @@ export function UsersPageClient({
               <div className="px-6 pb-2 text-xs text-muted-foreground">
                 Menampilkan log perubahan pengguna, reset password, dan aksi manajemen akun terbaru. Geser tabel ke samping pada layar kecil untuk melihat kolom target/detail.
               </div>
-              <div className="overflow-x-auto">
+              <div className="w-full overflow-x-auto">
                 <Table className="min-w-[1100px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">
@@ -836,7 +842,7 @@ export function UsersPageClient({
                   role={editRole}
                   setRole={(nextRole) => {
                     setEditRole(nextRole)
-                    if (nextRole !== "petugas_plp") setEditAssignments([])
+                    if (nextRole !== "petugas_plp" && nextRole !== "dosen") setEditAssignments([])
                   }}
                   assignmentLabIds={editAssignments}
                   setAssignmentLabIds={setEditAssignments}

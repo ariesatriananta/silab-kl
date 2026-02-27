@@ -8,7 +8,7 @@ export default withAuth(
     const mustChangePassword = req.nextauth.token?.mustChangePassword
     const pathname = req.nextUrl.pathname
     const redirectPath = getDashboardAccessRedirect({
-      role: tokenRole as "admin" | "mahasiswa" | "petugas_plp" | undefined,
+      role: tokenRole as "admin" | "mahasiswa" | "petugas_plp" | "dosen" | undefined,
       pathname,
       mustChangePassword: Boolean(mustChangePassword),
     })

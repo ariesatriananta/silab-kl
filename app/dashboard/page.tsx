@@ -1,4 +1,5 @@
 import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { redirect } from "next/navigation"
 import { ArrowUpRight, AlertTriangle, Package, Wrench } from "lucide-react"
 
 import { LabOverview, type LabOverviewItem } from "@/components/dashboard/lab-overview"
@@ -8,6 +9,7 @@ import { StatCard } from "@/components/dashboard/stat-card"
 import { Badge } from "@/components/ui/badge"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { db } from "@/lib/db/client"
+import { getServerAuthSession } from "@/lib/auth/server"
 import {
   borrowingReturnItems,
   borrowingReturns,
@@ -19,6 +21,7 @@ import {
   labs,
   toolAssets,
   toolModels,
+  userLabAssignments,
   users,
 } from "@/lib/db/schema"
 
@@ -44,7 +47,50 @@ function fmtDateTime(date: Date | null) {
   }).format(date)
 }
 
-async function getDashboardData() {
+type DashboardRole = "admin" | "petugas_plp" | "dosen" | "mahasiswa"
+
+async function getAccessibleLabIds(role: DashboardRole, userId: string) {
+  if (role === "admin" || role === "mahasiswa") return null
+  const rows = await db
+    .select({ labId: userLabAssignments.labId })
+    .from(userLabAssignments)
+    .where(eq(userLabAssignments.userId, userId))
+  return rows.map((r) => r.labId)
+}
+
+async function getDashboardData(role: DashboardRole, userId: string) {
+  const accessibleLabIds = await getAccessibleLabIds(role, userId)
+  const labScopedFilter =
+    role === "admin"
+      ? undefined
+      : accessibleLabIds && accessibleLabIds.length > 0
+        ? inArray(labs.id, accessibleLabIds)
+        : sql`false`
+  const borrowingLabFilter =
+    role === "admin"
+      ? undefined
+      : accessibleLabIds && accessibleLabIds.length > 0
+        ? inArray(borrowingTransactions.labId, accessibleLabIds)
+        : sql`false`
+  const toolModelLabFilter =
+    role === "admin"
+      ? undefined
+      : accessibleLabIds && accessibleLabIds.length > 0
+        ? inArray(toolModels.labId, accessibleLabIds)
+        : sql`false`
+  const consumableLabFilter =
+    role === "admin"
+      ? undefined
+      : accessibleLabIds && accessibleLabIds.length > 0
+        ? inArray(consumableItems.labId, accessibleLabIds)
+        : sql`false`
+  const labUsageFilter =
+    role === "admin"
+      ? undefined
+      : accessibleLabIds && accessibleLabIds.length > 0
+        ? inArray(labUsageLogs.labId, accessibleLabIds)
+        : sql`false`
+
   const [
     assetStatusRows,
     labRows,
@@ -64,6 +110,9 @@ async function getDashboardData() {
         count: sql<number>`count(*)`,
       })
       .from(toolAssets)
+      .innerJoin(toolModels, eq(toolModels.id, toolAssets.toolModelId))
+      .innerJoin(labs, eq(labs.id, toolModels.labId))
+      .where(labScopedFilter)
       .groupBy(toolAssets.status),
     db
       .select({
@@ -89,6 +138,7 @@ async function getDashboardData() {
       .innerJoin(users, eq(users.id, borrowingTransactions.requesterUserId))
       .where(
         and(
+          borrowingLabFilter,
           inArray(borrowingTransactions.status, ["active", "partially_returned"]),
           sql`${borrowingTransactions.dueDate} < now()`,
         ),
@@ -104,7 +154,7 @@ async function getDashboardData() {
       })
       .from(borrowingTransactions)
       .innerJoin(users, eq(users.id, borrowingTransactions.requesterUserId))
-      .where(eq(borrowingTransactions.status, "active"))
+      .where(and(borrowingLabFilter, eq(borrowingTransactions.status, "active")))
       .orderBy(desc(borrowingTransactions.handedOverAt))
       .limit(5),
     db
@@ -119,6 +169,7 @@ async function getDashboardData() {
       .innerJoin(borrowingTransactions, eq(borrowingTransactions.id, borrowingReturns.transactionId))
       .innerJoin(users, eq(users.id, borrowingTransactions.requesterUserId))
       .leftJoin(borrowingReturnItems, eq(borrowingReturnItems.returnId, borrowingReturns.id))
+      .where(borrowingLabFilter)
       .groupBy(borrowingReturns.id, borrowingTransactions.code, users.fullName)
       .orderBy(desc(borrowingReturns.returnedAt))
       .limit(5),
@@ -136,6 +187,7 @@ async function getDashboardData() {
       .innerJoin(borrowingTransactions, eq(borrowingTransactions.id, borrowingTransactionItems.transactionId))
       .where(
         and(
+          toolModelLabFilter,
           eq(borrowingTransactionItems.itemType, "tool_asset"),
           sql`${borrowingTransactions.handedOverAt} is not null`,
         ),
@@ -149,6 +201,10 @@ async function getDashboardData() {
         count: sql<number>`count(*)`,
       })
       .from(borrowingReturnItems)
+      .innerJoin(toolAssets, eq(toolAssets.id, borrowingReturnItems.toolAssetId))
+      .innerJoin(toolModels, eq(toolModels.id, toolAssets.toolModelId))
+      .innerJoin(labs, eq(labs.id, toolModels.labId))
+      .where(labScopedFilter)
       .groupBy(borrowingReturnItems.returnCondition),
     db
       .select({
@@ -161,7 +217,8 @@ async function getDashboardData() {
       .innerJoin(borrowingReturns, eq(borrowingReturns.id, borrowingReturnItems.returnId))
       .innerJoin(toolAssets, eq(toolAssets.id, borrowingReturnItems.toolAssetId))
       .innerJoin(toolModels, eq(toolModels.id, toolAssets.toolModelId))
-      .where(inArray(borrowingReturnItems.returnCondition, ["maintenance", "damaged"]))
+      .innerJoin(labs, eq(labs.id, toolModels.labId))
+      .where(and(labScopedFilter, inArray(borrowingReturnItems.returnCondition, ["maintenance", "damaged"])))
       .orderBy(desc(borrowingReturns.returnedAt))
       .limit(5),
     db
@@ -170,7 +227,8 @@ async function getDashboardData() {
         totalDelta: sql<number>`coalesce(sum(${consumableStockMovements.qtyDelta}), 0)`,
       })
       .from(consumableStockMovements)
-      .where(sql`${consumableStockMovements.createdAt} >= now() - interval '30 days'`)
+      .innerJoin(consumableItems, eq(consumableItems.id, consumableStockMovements.consumableItemId))
+      .where(and(consumableLabFilter, sql`${consumableStockMovements.createdAt} >= now() - interval '30 days'`))
       .groupBy(consumableStockMovements.movementType),
     db
       .select({
@@ -184,6 +242,7 @@ async function getDashboardData() {
       .innerJoin(labs, eq(labs.id, consumableItems.labId))
       .where(
         and(
+          consumableLabFilter,
           inArray(consumableStockMovements.movementType, ["material_request_fulfill", "borrowing_handover_issue"]),
           sql`${consumableStockMovements.createdAt} >= now() - interval '30 days'`,
         ),
@@ -203,6 +262,7 @@ async function getDashboardData() {
       })
       .from(labUsageLogs)
       .innerJoin(labs, eq(labs.id, labUsageLogs.labId))
+      .where(labUsageFilter)
       .orderBy(desc(labUsageLogs.startedAt))
       .limit(6),
   ])
@@ -338,6 +398,10 @@ async function getDashboardData() {
 }
 
 export default async function DashboardPage() {
+  const session = await getServerAuthSession()
+  if (!session?.user?.id || !session.user.role) redirect("/")
+  if (session.user.role === "mahasiswa") redirect("/dashboard/student-tools")
+
   const {
     counts,
     labOverview,
@@ -349,10 +413,10 @@ export default async function DashboardPage() {
     consumableUsageSummary,
     topConsumableUsage,
     roomActivities,
-  } = await getDashboardData()
+  } = await getDashboardData(session.user.role as DashboardRole, session.user.id)
 
   return (
-    <div className="flex flex-col gap-6 p-4 lg:p-6">
+    <div className="min-w-0 overflow-x-hidden flex flex-col gap-6 p-4 lg:p-6">
       <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-card to-muted/30 p-5 shadow-sm">
         <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
           <div>
