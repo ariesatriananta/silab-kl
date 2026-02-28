@@ -16,7 +16,6 @@ import { db } from "@/lib/db/client"
 import {
   borrowingApprovals,
   borrowingApprovalMatrices,
-  borrowingApprovalMatrixSteps,
   borrowingHandovers,
   borrowingReturnItems,
   borrowingReturns,
@@ -48,6 +47,30 @@ type PendingApprovalInfo = {
   label: string
   approvers: string[]
   triage: "step1_ready" | "step2_ready" | "blocked_matrix" | "unknown"
+}
+
+function getMatrixRequiredApprover(input: {
+  approvalsCount: number
+  matrixId: string | null
+  matrixById: Map<
+    string,
+    {
+      id: string
+      step1ApproverUserId: string | null
+      step2ApproverUserId: string | null
+    }
+  >
+}) {
+  if (!input.matrixId) return null
+  const matrix = input.matrixById.get(input.matrixId)
+  if (!matrix) return null
+  if (input.approvalsCount <= 0) {
+    return { stepOrder: 1 as const, approverUserId: matrix.step1ApproverUserId }
+  }
+  if (input.approvalsCount === 1) {
+    return { stepOrder: 2 as const, approverUserId: matrix.step2ApproverUserId }
+  }
+  return null
 }
 
 function fmtDate(date: Date | null) {
@@ -88,24 +111,20 @@ function getPendingApprovalInfo(input: {
   status: ReturnType<typeof mapBorrowingDisplayStatus>
   approvalsCount: number
   matrixId: string | null
-  matrixSteps: Array<{ stepOrder: number; approverRole: "dosen" | "petugas_plp" | "admin" | "mahasiswa" }>
-  dosenApprovers: string[]
-  plpApprovers: string[]
+  step1ApproverName: string | null
+  step2ApproverName: string | null
 }): PendingApprovalInfo | null {
   if (input.status !== "pending") return null
   if (!input.matrixId) return { label: "Matrix approval belum dipasang", approvers: [], triage: "blocked_matrix" }
-
-  const step1 = input.matrixSteps.find((item) => item.stepOrder === 1)?.approverRole
-  const step2 = input.matrixSteps.find((item) => item.stepOrder === 2)?.approverRole
-  if (step1 !== "dosen" || step2 !== "petugas_plp") {
+  if (!input.step1ApproverName || !input.step2ApproverName) {
     return { label: "Matrix approval tidak valid", approvers: [], triage: "blocked_matrix" }
   }
 
   if (input.approvalsCount <= 0) {
-    return { label: "Tahap 1: Dosen", approvers: input.dosenApprovers, triage: "step1_ready" }
+    return { label: "Tahap 1: Dosen", approvers: [input.step1ApproverName], triage: "step1_ready" }
   }
   if (input.approvalsCount === 1) {
-    return { label: "Tahap 2: Petugas PLP", approvers: input.plpApprovers, triage: "step2_ready" }
+    return { label: "Tahap 2: Petugas PLP", approvers: [input.step2ApproverName], triage: "step2_ready" }
   }
   return { label: "Menunggu sinkronisasi status", approvers: [], triage: "unknown" }
 }
@@ -168,18 +187,14 @@ async function getBorrowingData(
                     ) = 1`,
                 role === "dosen"
                   ? sql`exists (
-                      select 1
-                      from borrowing_approval_matrix_steps bams
-                      where bams.matrix_id = ${borrowingTransactions.approvalMatrixId}
-                        and bams.step_order = 1
-                        and bams.approver_role = 'dosen'
+                      select 1 from borrowing_approval_matrices bam
+                      where bam.id = ${borrowingTransactions.approvalMatrixId}
+                        and bam.step1_approver_user_id = ${userId}
                     )`
                   : sql`exists (
-                      select 1
-                      from borrowing_approval_matrix_steps bams
-                      where bams.matrix_id = ${borrowingTransactions.approvalMatrixId}
-                        and bams.step_order = 2
-                        and bams.approver_role = 'petugas_plp'
+                      select 1 from borrowing_approval_matrices bam
+                      where bam.id = ${borrowingTransactions.approvalMatrixId}
+                        and bam.step2_approver_user_id = ${userId}
                     )`,
               )
             : sql`false`
@@ -219,18 +234,14 @@ async function getBorrowingData(
         case
           when ${borrowingTransactions.approvalMatrixId} is null then 90
           when not exists (
-            select 1
-            from borrowing_approval_matrix_steps bams
-            where bams.matrix_id = ${borrowingTransactions.approvalMatrixId}
-              and bams.step_order = 1
-              and bams.approver_role = 'dosen'
+            select 1 from borrowing_approval_matrices bam
+            where bam.id = ${borrowingTransactions.approvalMatrixId}
+              and bam.step1_approver_user_id is not null
           ) then 90
           when not exists (
-            select 1
-            from borrowing_approval_matrix_steps bams
-            where bams.matrix_id = ${borrowingTransactions.approvalMatrixId}
-              and bams.step_order = 2
-              and bams.approver_role = 'petugas_plp'
+            select 1 from borrowing_approval_matrices bam
+            where bam.id = ${borrowingTransactions.approvalMatrixId}
+              and bam.step2_approver_user_id is not null
           ) then 90
           when (
             select count(*)
@@ -319,8 +330,8 @@ async function getBorrowingData(
     returnedItemRows,
     returnRows,
     returnItemRows,
-    matrixStepRows,
-    approverAssignmentRows,
+    matrixRowsForTx,
+    approverUserRows,
   ] =
     await Promise.all([
       db
@@ -417,35 +428,31 @@ async function getBorrowingData(
       .where(inArray(borrowingReturns.transactionId, txIds)),
       db
         .select({
-          matrixId: borrowingApprovalMatrixSteps.matrixId,
-          stepOrder: borrowingApprovalMatrixSteps.stepOrder,
-          approverRole: borrowingApprovalMatrixSteps.approverRole,
+          id: borrowingApprovalMatrices.id,
+          step1ApproverUserId: borrowingApprovalMatrices.step1ApproverUserId,
+          step2ApproverUserId: borrowingApprovalMatrices.step2ApproverUserId,
         })
-        .from(borrowingApprovalMatrixSteps)
+        .from(borrowingApprovalMatrices)
         .where(
           (() => {
             const matrixIds = txRows
               .map((row) => row.approvalMatrixId)
               .filter((value): value is string => Boolean(value))
             return matrixIds.length > 0
-              ? inArray(borrowingApprovalMatrixSteps.matrixId, matrixIds)
+              ? inArray(borrowingApprovalMatrices.id, matrixIds)
               : sql`false`
           })(),
         ),
       db
         .select({
-          labId: userLabAssignments.labId,
-          role: users.role,
+          id: users.id,
           fullName: users.fullName,
         })
         .from(userLabAssignments)
         .innerJoin(users, eq(users.id, userLabAssignments.userId))
         .where(
           and(
-            inArray(
-              userLabAssignments.labId,
-              [...new Set(txRows.map((row) => row.labId))],
-            ),
+            inArray(userLabAssignments.labId, [...new Set(txRows.map((row) => row.labId))]),
             inArray(users.role, ["dosen", "petugas_plp"]),
             eq(users.isActive, true),
           ),
@@ -474,22 +481,8 @@ async function getBorrowingData(
   }
 
   const approvalCountByTx = new Map(approvalRows.map((r) => [r.transactionId, Number(r.count)]))
-  const matrixStepsById = new Map<
-    string,
-    Array<{ stepOrder: number; approverRole: "dosen" | "petugas_plp" | "admin" | "mahasiswa" }>
-  >()
-  for (const row of matrixStepRows) {
-    const list = matrixStepsById.get(row.matrixId) ?? []
-    list.push({ stepOrder: row.stepOrder, approverRole: row.approverRole })
-    matrixStepsById.set(row.matrixId, list)
-  }
-  const approversByLab = new Map<string, { dosen: string[]; plp: string[] }>()
-  for (const row of approverAssignmentRows) {
-    const list = approversByLab.get(row.labId) ?? { dosen: [], plp: [] }
-    if (row.role === "dosen") list.dosen.push(row.fullName)
-    if (row.role === "petugas_plp") list.plp.push(row.fullName)
-    approversByLab.set(row.labId, list)
-  }
+  const matrixById = new Map(matrixRowsForTx.map((row) => [row.id, row]))
+  const userById = new Map(approverUserRows.map((row) => [row.id, row.fullName]))
   const returnCountByTx = new Map(returnCountRows.map((r) => [r.transactionId, Number(r.count)]))
   const handoverHistoryByTx = new Map<string, BorrowingDetail["handoverHistory"]>()
   for (const row of handoverHistoryRows) {
@@ -547,13 +540,22 @@ async function getBorrowingData(
   const rows: BorrowingListRow[] = txRows.map((row) => {
     const status = mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate })
     const items = itemMap.get(row.id) ?? []
+    const matrix = row.approvalMatrixId ? matrixById.get(row.approvalMatrixId) : undefined
+    const requiredApprover = getMatrixRequiredApprover({
+      approvalsCount: approvalCountByTx.get(row.id) ?? 0,
+      matrixId: row.approvalMatrixId,
+      matrixById,
+    })
+    const requiredApproverName =
+      requiredApprover?.approverUserId ? userById.get(requiredApprover.approverUserId) ?? null : null
+    const adminOverrideReasonRequired =
+      role === "admin" && status === "pending" && !!requiredApprover?.approverUserId && requiredApprover.approverUserId !== userId
     const pendingApproval = getPendingApprovalInfo({
       status,
       approvalsCount: approvalCountByTx.get(row.id) ?? 0,
       matrixId: row.approvalMatrixId,
-      matrixSteps: row.approvalMatrixId ? matrixStepsById.get(row.approvalMatrixId) ?? [] : [],
-      dosenApprovers: approversByLab.get(row.labId)?.dosen ?? [],
-      plpApprovers: approversByLab.get(row.labId)?.plp ?? [],
+      step1ApproverName: matrix?.step1ApproverUserId ? userById.get(matrix.step1ApproverUserId) ?? null : null,
+      step2ApproverName: matrix?.step2ApproverUserId ? userById.get(matrix.step2ApproverUserId) ?? null : null,
     })
     return {
       id: row.id,
@@ -576,19 +578,33 @@ async function getBorrowingData(
       pendingApprovalLabel: pendingApproval?.label ?? null,
       pendingApprovalApprovers: pendingApproval?.approvers ?? [],
       pendingApprovalTriage: pendingApproval?.triage ?? null,
+      pendingRequiredApproverName: requiredApproverName,
+      adminOverrideReasonRequired,
     }
   })
 
   const details: Record<string, BorrowingDetail> = Object.fromEntries(
     txRows.map((row) => {
       const status = mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate })
+      const matrix = row.approvalMatrixId ? matrixById.get(row.approvalMatrixId) : undefined
+      const requiredApprover = getMatrixRequiredApprover({
+        approvalsCount: approvalCountByTx.get(row.id) ?? 0,
+        matrixId: row.approvalMatrixId,
+        matrixById,
+      })
+      const requiredApproverName =
+        requiredApprover?.approverUserId ? userById.get(requiredApprover.approverUserId) ?? null : null
+      const adminOverrideReasonRequired =
+        role === "admin" &&
+        status === "pending" &&
+        !!requiredApprover?.approverUserId &&
+        requiredApprover.approverUserId !== userId
       const pendingApproval = getPendingApprovalInfo({
         status,
         approvalsCount: approvalCountByTx.get(row.id) ?? 0,
         matrixId: row.approvalMatrixId,
-        matrixSteps: row.approvalMatrixId ? matrixStepsById.get(row.approvalMatrixId) ?? [] : [],
-        dosenApprovers: approversByLab.get(row.labId)?.dosen ?? [],
-        plpApprovers: approversByLab.get(row.labId)?.plp ?? [],
+        step1ApproverName: matrix?.step1ApproverUserId ? userById.get(matrix.step1ApproverUserId) ?? null : null,
+        step2ApproverName: matrix?.step2ApproverUserId ? userById.get(matrix.step2ApproverUserId) ?? null : null,
       })
       return [
         row.id,
@@ -612,6 +628,8 @@ async function getBorrowingData(
           pendingApprovalLabel: pendingApproval?.label ?? null,
           pendingApprovalApprovers: pendingApproval?.approvers ?? [],
           pendingApprovalTriage: pendingApproval?.triage ?? null,
+          pendingRequiredApproverName: requiredApproverName,
+          adminOverrideReasonRequired,
           items: itemMap.get(row.id) ?? [],
           approvalHistory: approvalHistoryByTx.get(row.id) ?? [],
           handoverHistory: handoverHistoryByTx.get(row.id) ?? [],
@@ -646,7 +664,7 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
         : sql`false`
       : undefined
 
-  const [labRows, requesterRows, toolRows, consumableRows, matrixRows, stepRows, approverRows] = await Promise.all([
+  const [labRows, requesterRows, toolRows, consumableRows, matrixRows, approverRows] = await Promise.all([
     db
       .select({ id: labs.id, name: labs.name })
       .from(labs)
@@ -711,18 +729,10 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
         id: borrowingApprovalMatrices.id,
         labId: borrowingApprovalMatrices.labId,
         isActive: borrowingApprovalMatrices.isActive,
+        step1ApproverUserId: borrowingApprovalMatrices.step1ApproverUserId,
+        step2ApproverUserId: borrowingApprovalMatrices.step2ApproverUserId,
       })
       .from(borrowingApprovalMatrices)
-      .innerJoin(labs, eq(labs.id, borrowingApprovalMatrices.labId))
-      .where(labScopeWhere),
-    db
-      .select({
-        matrixId: borrowingApprovalMatrixSteps.matrixId,
-        stepOrder: borrowingApprovalMatrixSteps.stepOrder,
-        approverRole: borrowingApprovalMatrixSteps.approverRole,
-      })
-      .from(borrowingApprovalMatrixSteps)
-      .innerJoin(borrowingApprovalMatrices, eq(borrowingApprovalMatrices.id, borrowingApprovalMatrixSteps.matrixId))
       .innerJoin(labs, eq(labs.id, borrowingApprovalMatrices.labId))
       .where(labScopeWhere),
     db
@@ -761,15 +771,6 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
   }))
 
   const matrixByLab = new Map(matrixRows.map((row) => [row.labId, row]))
-  const stepsByMatrix = new Map<
-    string,
-    Array<{ stepOrder: number; approverRole: "dosen" | "petugas_plp" | "admin" | "mahasiswa" }>
-  >()
-  for (const row of stepRows) {
-    const list = stepsByMatrix.get(row.matrixId) ?? []
-    list.push({ stepOrder: row.stepOrder, approverRole: row.approverRole })
-    stepsByMatrix.set(row.matrixId, list)
-  }
 
   const approversByLab = new Map<
     string,
@@ -791,21 +792,24 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
 
   const approvalRoutes: BorrowingCreateApprovalRouteOption[] = labsOptions.map((lab) => {
     const matrix = matrixByLab.get(lab.id)
-    const steps = matrix ? stepsByMatrix.get(matrix.id) ?? [] : []
-    const step1Role = steps.find((item) => item.stepOrder === 1)?.approverRole
-    const step2Role = steps.find((item) => item.stepOrder === 2)?.approverRole
     const approvers = approversByLab.get(lab.id) ?? { dosen: [], plp: [] }
-    const matrixValid = step1Role === "dosen" && step2Role === "petugas_plp"
-    const isReady = Boolean(matrix?.isActive && matrixValid && approvers.dosen.length > 0 && approvers.plp.length > 0)
+    const selectedDosen = matrix?.step1ApproverUserId
+      ? approvers.dosen.filter((item) => item.id === matrix.step1ApproverUserId)
+      : []
+    const selectedPlp = matrix?.step2ApproverUserId
+      ? approvers.plp.filter((item) => item.id === matrix.step2ApproverUserId)
+      : []
+    const matrixValid = Boolean(matrix?.step1ApproverUserId && matrix?.step2ApproverUserId)
+    const isReady = Boolean(matrix?.isActive && matrixValid && selectedDosen.length > 0 && selectedPlp.length > 0)
     return {
       labId: lab.id,
       matrixActive: matrix?.isActive ?? false,
       matrixValid,
       isReady,
-      step1Role: step1Role === "dosen" ? "dosen" : null,
-      step2Role: step2Role === "petugas_plp" ? "petugas_plp" : null,
-      dosenApprovers: approvers.dosen,
-      plpApprovers: approvers.plp,
+      step1Role: selectedDosen.length > 0 ? "dosen" : null,
+      step2Role: selectedPlp.length > 0 ? "petugas_plp" : null,
+      dosenApprovers: selectedDosen,
+      plpApprovers: selectedPlp,
     }
   })
 

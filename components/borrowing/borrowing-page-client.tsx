@@ -210,6 +210,8 @@ export type BorrowingListRow = {
   pendingApprovalLabel: string | null
   pendingApprovalApprovers: string[]
   pendingApprovalTriage: "step1_ready" | "step2_ready" | "blocked_matrix" | "unknown" | null
+  pendingRequiredApproverName: string | null
+  adminOverrideReasonRequired: boolean
 }
 
 export type BorrowingDetail = {
@@ -232,6 +234,8 @@ export type BorrowingDetail = {
   pendingApprovalLabel: string | null
   pendingApprovalApprovers: string[]
   pendingApprovalTriage: "step1_ready" | "step2_ready" | "blocked_matrix" | "unknown" | null
+  pendingRequiredApproverName: string | null
+  adminOverrideReasonRequired: boolean
   items: Array<{
     id: string
     itemType: "tool_asset" | "consumable"
@@ -375,7 +379,7 @@ export function BorrowingPageClient({
   const { toast } = useToast()
   const feedbackRef = useRef<string[]>([])
 
-  const canApprove = role === "petugas_plp" || role === "dosen"
+  const canApprove = role === "petugas_plp" || role === "dosen" || role === "admin"
   const canHandover = role === "admin" || role === "petugas_plp"
   const canCreate = role !== "dosen"
   const isMahasiswa = role === "mahasiswa"
@@ -1320,7 +1324,7 @@ export function BorrowingPageClient({
                 )}
                 {filtered.map((borrow) => {
                   const status = statusConfig[borrow.status]
-                  const showApprovalActions = canApprove && borrow.status === "pending"
+                  const showApprovalActions = canApprove && role !== "admin" && borrow.status === "pending"
                   return (
                     <TableRow key={borrow.id} className="hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">{borrow.code}</TableCell>
@@ -1733,6 +1737,12 @@ export function BorrowingPageClient({
                     <p className="text-sm text-muted-foreground">
                       Approval kedua (oleh user berbeda) akan mengubah status menjadi <span className="font-medium text-foreground">Menunggu Serah Terima</span>.
                     </p>
+                    {role === "admin" && selectedBorrowing.adminOverrideReasonRequired && (
+                      <div className="rounded-xl border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
+                        Admin fallback aktif: alasan approval/penolakan wajib diisi karena approver matrix saat ini adalah{" "}
+                        <span className="font-medium">{selectedBorrowing.pendingRequiredApproverName ?? "user lain"}</span>.
+                      </div>
+                    )}
                     {(approveState || rejectState) && (
                       <div className="grid gap-2">
                         {approveState && (
@@ -1762,7 +1772,11 @@ export function BorrowingPageClient({
                     <div className="grid gap-3 sm:grid-cols-2">
                       <form action={approveAction} className="flex flex-col gap-2">
                         <input type="hidden" name="transactionId" value={selectedBorrowing.id} />
-                        <Label htmlFor="approvalNote">Catatan Approval (opsional)</Label>
+                        <Label htmlFor="approvalNote">
+                          {role === "admin" && selectedBorrowing.adminOverrideReasonRequired
+                            ? "Alasan Approval (wajib untuk admin fallback)"
+                            : "Catatan Approval (opsional)"}
+                        </Label>
                         <Textarea
                           id="approvalNote"
                           name="note"
@@ -1770,6 +1784,7 @@ export function BorrowingPageClient({
                           onChange={(e) => setApprovalNote(e.target.value)}
                           placeholder="Contoh: disetujui untuk praktikum minggu ini"
                           maxLength={500}
+                          required={role === "admin" && selectedBorrowing.adminOverrideReasonRequired}
                         />
                         <Button type="submit" className="w-full" disabled={approvePending}>
                           <CheckCircle2 className="size-4" />
@@ -1778,7 +1793,11 @@ export function BorrowingPageClient({
                       </form>
                       <form action={rejectAction} className="flex flex-col gap-2">
                         <input type="hidden" name="transactionId" value={selectedBorrowing.id} />
-                        <Label htmlFor="rejectNote">Alasan Penolakan (opsional)</Label>
+                        <Label htmlFor="rejectNote">
+                          {role === "admin" && selectedBorrowing.adminOverrideReasonRequired
+                            ? "Alasan Penolakan (wajib untuk admin fallback)"
+                            : "Alasan Penolakan (opsional)"}
+                        </Label>
                         <Textarea
                           id="rejectNote"
                           name="note"
@@ -1786,6 +1805,7 @@ export function BorrowingPageClient({
                           onChange={(e) => setRejectNote(e.target.value)}
                           placeholder="Contoh: alat tidak tersedia pada jadwal diminta"
                           maxLength={500}
+                          required={role === "admin" && selectedBorrowing.adminOverrideReasonRequired}
                         />
                         <Button type="submit" variant="destructive" className="w-full" disabled={rejectPending}>
                           <XCircle className="size-4" />

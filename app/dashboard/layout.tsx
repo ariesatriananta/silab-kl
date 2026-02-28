@@ -6,6 +6,7 @@ import { AppSidebar } from "@/components/app-sidebar"
 import { Separator } from "@/components/ui/separator"
 import { usePathname } from "next/navigation"
 import { HeaderUserMenu } from "@/components/header-user-menu"
+import { HeaderNotificationMenu } from "@/components/header-notification-menu"
 import { ThemeToggle } from "@/components/theme-toggle"
 
 const pageMeta: Record<string, { title: string; subtitle: string }> = {
@@ -77,6 +78,7 @@ export default function DashboardLayout({
             <p className="hidden truncate text-xs text-muted-foreground lg:block">{meta.subtitle}</p>
           </div>
           <div className="ml-auto flex items-center gap-2">
+            <HeaderNotificationMenu />
             <ThemeToggle />
             <HeaderUserMenu />
           </div>

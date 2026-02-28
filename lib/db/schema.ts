@@ -359,11 +359,17 @@ export const borrowingApprovalMatrices = pgTable(
     labId: uuid("lab_id")
       .notNull()
       .references(() => labs.id, { onDelete: "cascade" }),
+    step1ApproverUserId: uuid("step1_approver_user_id").references(() => users.id, { onDelete: "set null" }),
+    step2ApproverUserId: uuid("step2_approver_user_id").references(() => users.id, { onDelete: "set null" }),
     isActive: boolean("is_active").default(false).notNull(),
     createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
   },
-  (t) => [uniqueIndex("borrowing_approval_matrices_lab_uq").on(t.labId)],
+  (t) => [
+    uniqueIndex("borrowing_approval_matrices_lab_uq").on(t.labId),
+    index("borrowing_approval_matrices_step1_user_idx").on(t.step1ApproverUserId),
+    index("borrowing_approval_matrices_step2_user_idx").on(t.step2ApproverUserId),
+  ],
 )
 
 export const borrowingApprovalMatrixSteps = pgTable(

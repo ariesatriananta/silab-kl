@@ -5,7 +5,6 @@ import { hashPassword } from "../lib/auth/password"
 import { createDb } from "../lib/db/create-db"
 import {
   borrowingApprovalMatrices,
-  borrowingApprovalMatrixSteps,
   consumableItems,
   labs,
   toolAssets,
@@ -63,18 +62,6 @@ async function main() {
     .returning({ id: labs.id, code: labs.code, name: labs.name })
 
   const labByCode = Object.fromEntries(insertedLabs.map((lab) => [lab.code, lab]))
-
-  const insertedMatrices = await db
-    .insert(borrowingApprovalMatrices)
-    .values(insertedLabs.map((lab) => ({ labId: lab.id, isActive: true })))
-    .returning({ id: borrowingApprovalMatrices.id })
-
-  await db.insert(borrowingApprovalMatrixSteps).values(
-    insertedMatrices.flatMap((matrix) => [
-      { matrixId: matrix.id, stepOrder: 1, approverRole: "dosen" as const },
-      { matrixId: matrix.id, stepOrder: 2, approverRole: "petugas_plp" as const },
-    ]),
-  )
 
   const insertedUsers = await db
     .insert(users)
@@ -152,6 +139,33 @@ async function main() {
     { userId: userByUsername["dosen.rahma"].id, labId: labByCode["LAB-HEM"].id },
     { userId: userByUsername["dosen.rahma"].id, labId: labByCode["LAB-PAR"].id },
     { userId: userByUsername["dosen.budi"].id, labId: labByCode["LAB-KIM"].id },
+  ])
+
+  await db.insert(borrowingApprovalMatrices).values([
+    {
+      labId: labByCode["LAB-HEM"].id,
+      isActive: true,
+      step1ApproverUserId: userByUsername["dosen.rahma"].id,
+      step2ApproverUserId: userByUsername["plp.suryani"].id,
+    },
+    {
+      labId: labByCode["LAB-PAR"].id,
+      isActive: true,
+      step1ApproverUserId: userByUsername["dosen.rahma"].id,
+      step2ApproverUserId: userByUsername["plp.suryani"].id,
+    },
+    {
+      labId: labByCode["LAB-KIM"].id,
+      isActive: true,
+      step1ApproverUserId: userByUsername["dosen.budi"].id,
+      step2ApproverUserId: userByUsername["plp.hartono"].id,
+    },
+    {
+      labId: labByCode["LAB-MIK"].id,
+      isActive: false,
+      step1ApproverUserId: null,
+      step2ApproverUserId: userByUsername["plp.hartono"].id,
+    },
   ])
 
   const insertedToolModels = await db

@@ -7,7 +7,7 @@ import {
 } from "@/components/approval-matrix/approval-matrix-page-client"
 import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
-import { borrowingApprovalMatrices, borrowingApprovalMatrixSteps, labs, userLabAssignments, users } from "@/lib/db/schema"
+import { borrowingApprovalMatrices, labs, userLabAssignments, users } from "@/lib/db/schema"
 
 export const dynamic = "force-dynamic"
 
@@ -15,21 +15,23 @@ export default async function ApprovalMatrixPage() {
   const session = await getServerAuthSession()
   if (!session?.user?.id || session.user.role !== "admin") redirect("/dashboard")
 
-  const [labRows, matrixRows, stepRows, assignmentRows] = await Promise.all([
+  const [labRows, matrixRows, assignmentRows] = await Promise.all([
     db.select({ id: labs.id, name: labs.name }).from(labs).where(eq(labs.isActive, true)).orderBy(asc(labs.name)),
     db
-      .select({ id: borrowingApprovalMatrices.id, labId: borrowingApprovalMatrices.labId, isActive: borrowingApprovalMatrices.isActive })
+      .select({
+        id: borrowingApprovalMatrices.id,
+        labId: borrowingApprovalMatrices.labId,
+        isActive: borrowingApprovalMatrices.isActive,
+        step1ApproverUserId: borrowingApprovalMatrices.step1ApproverUserId,
+        step2ApproverUserId: borrowingApprovalMatrices.step2ApproverUserId,
+      })
       .from(borrowingApprovalMatrices),
     db
       .select({
-        matrixId: borrowingApprovalMatrixSteps.matrixId,
-        stepOrder: borrowingApprovalMatrixSteps.stepOrder,
-        approverRole: borrowingApprovalMatrixSteps.approverRole,
-      })
-      .from(borrowingApprovalMatrixSteps),
-    db
-      .select({
         labId: userLabAssignments.labId,
+        userId: users.id,
+        fullName: users.fullName,
+        identifier: users.nip,
         role: users.role,
       })
       .from(userLabAssignments)
@@ -38,41 +40,46 @@ export default async function ApprovalMatrixPage() {
   ])
 
   const matrixByLab = new Map(matrixRows.map((m) => [m.labId, m]))
-  const stepsByMatrix = new Map<string, Array<{ stepOrder: number; approverRole: "dosen" | "petugas_plp" }>>()
-  for (const step of stepRows) {
-    const list = stepsByMatrix.get(step.matrixId) ?? []
-    if (step.approverRole === "dosen" || step.approverRole === "petugas_plp") {
-      list.push({ stepOrder: step.stepOrder, approverRole: step.approverRole })
-    }
-    stepsByMatrix.set(step.matrixId, list)
-  }
-
   const assignmentSummary = new Map<string, { dosen: number; plp: number }>()
+  const approverCandidatesByLab = new Map<
+    string,
+    {
+      dosen: Array<{ id: string; name: string; identifier: string | null }>
+      plp: Array<{ id: string; name: string; identifier: string | null }>
+    }
+  >()
   for (const row of assignmentRows) {
     const item = assignmentSummary.get(row.labId) ?? { dosen: 0, plp: 0 }
+    const candidates = approverCandidatesByLab.get(row.labId) ?? { dosen: [], plp: [] }
     if (row.role === "dosen") item.dosen += 1
     if (row.role === "petugas_plp") item.plp += 1
+    if (row.role === "dosen") candidates.dosen.push({ id: row.userId, name: row.fullName, identifier: row.identifier })
+    if (row.role === "petugas_plp") candidates.plp.push({ id: row.userId, name: row.fullName, identifier: row.identifier })
     assignmentSummary.set(row.labId, item)
+    approverCandidatesByLab.set(row.labId, candidates)
   }
 
   const rows: ApprovalMatrixRow[] = labRows.map((lab) => {
     const matrix = matrixByLab.get(lab.id)
-    const steps = matrix ? stepsByMatrix.get(matrix.id) ?? [] : []
-    const step1 = steps.find((s) => s.stepOrder === 1)
-    const step2 = steps.find((s) => s.stepOrder === 2)
     const assignment = assignmentSummary.get(lab.id) ?? { dosen: 0, plp: 0 }
+    const candidates = approverCandidatesByLab.get(lab.id) ?? { dosen: [], plp: [] }
+    const selectedStep1 = candidates.dosen.find((item) => item.id === matrix?.step1ApproverUserId) ?? null
+    const selectedStep2 = candidates.plp.find((item) => item.id === matrix?.step2ApproverUserId) ?? null
 
     return {
       labId: lab.id,
       labName: lab.name,
       isActive: matrix?.isActive ?? false,
-      step1Role: step1?.approverRole === "dosen" ? "dosen" : null,
-      step2Role: step2?.approverRole === "petugas_plp" ? "petugas_plp" : null,
+      step1ApproverUserId: matrix?.step1ApproverUserId ?? null,
+      step2ApproverUserId: matrix?.step2ApproverUserId ?? null,
+      step1ApproverName: selectedStep1?.name ?? null,
+      step2ApproverName: selectedStep2?.name ?? null,
       dosenAssignedCount: assignment.dosen,
       plpAssignedCount: assignment.plp,
+      dosenCandidates: candidates.dosen,
+      plpCandidates: candidates.plp,
     }
   })
 
   return <ApprovalMatrixPageClient rows={rows} />
 }
-

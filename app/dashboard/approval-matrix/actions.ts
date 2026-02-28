@@ -8,7 +8,6 @@ import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
 import {
   borrowingApprovalMatrices,
-  borrowingApprovalMatrixSteps,
   userLabAssignments,
   users,
 } from "@/lib/db/schema"
@@ -19,6 +18,8 @@ export type ApprovalMatrixActionResult = { ok: boolean; message: string }
 const saveMatrixSchema = z.object({
   labId: z.string().uuid(),
   isActive: z.enum(["true", "false"]).transform((v) => v === "true"),
+  step1ApproverUserId: z.string().uuid().optional(),
+  step2ApproverUserId: z.string().uuid().optional(),
 })
 
 async function requireAdmin() {
@@ -37,8 +38,46 @@ export async function saveBorrowingApprovalMatrixAction(
   const parsed = saveMatrixSchema.safeParse({
     labId: formData.get("labId"),
     isActive: formData.get("isActive"),
+    step1ApproverUserId: formData.get("step1ApproverUserId")?.toString() || undefined,
+    step2ApproverUserId: formData.get("step2ApproverUserId")?.toString() || undefined,
   })
   if (!parsed.success) return { ok: false, message: "Data matrix approval tidak valid." }
+
+  if (!parsed.data.step1ApproverUserId || !parsed.data.step2ApproverUserId) {
+    return { ok: false, message: "Pilih approver tahap 1 (Dosen) dan tahap 2 (Petugas PLP)." }
+  }
+
+  const [step1User, step2User] = await Promise.all([
+    db.query.users.findFirst({
+      where: and(eq(users.id, parsed.data.step1ApproverUserId), eq(users.role, "dosen"), eq(users.isActive, true)),
+      columns: { id: true },
+    }),
+    db.query.users.findFirst({
+      where: and(eq(users.id, parsed.data.step2ApproverUserId), eq(users.role, "petugas_plp"), eq(users.isActive, true)),
+      columns: { id: true },
+    }),
+  ])
+  if (!step1User) return { ok: false, message: "Approver tahap 1 harus user Dosen aktif." }
+  if (!step2User) return { ok: false, message: "Approver tahap 2 harus user Petugas PLP aktif." }
+
+  const [step1Assignment, step2Assignment] = await Promise.all([
+    db.query.userLabAssignments.findFirst({
+      where: and(
+        eq(userLabAssignments.userId, parsed.data.step1ApproverUserId),
+        eq(userLabAssignments.labId, parsed.data.labId),
+      ),
+      columns: { userId: true },
+    }),
+    db.query.userLabAssignments.findFirst({
+      where: and(
+        eq(userLabAssignments.userId, parsed.data.step2ApproverUserId),
+        eq(userLabAssignments.labId, parsed.data.labId),
+      ),
+      columns: { userId: true },
+    }),
+  ])
+  if (!step1Assignment) return { ok: false, message: "Dosen tahap 1 harus ter-assign ke lab ini." }
+  if (!step2Assignment) return { ok: false, message: "Petugas PLP tahap 2 harus ter-assign ke lab ini." }
 
   if (parsed.data.isActive) {
     const [dosenCountRows, plpCountRows] = await Promise.all([
@@ -62,47 +101,36 @@ export async function saveBorrowingApprovalMatrixAction(
   }
 
   try {
-    await db.transaction(async (tx) => {
-      const existing = await tx.query.borrowingApprovalMatrices.findFirst({
-        where: eq(borrowingApprovalMatrices.labId, parsed.data.labId),
-        columns: { id: true },
-      })
-
-      const matrixId =
-        existing?.id ??
-        (
-          await tx
-            .insert(borrowingApprovalMatrices)
-            .values({ labId: parsed.data.labId, isActive: parsed.data.isActive })
-            .returning({ id: borrowingApprovalMatrices.id })
-        )[0]?.id
-
-      if (!matrixId) throw new Error("Gagal menyimpan matrix approval.")
-
-      if (existing?.id) {
-        await tx
-          .update(borrowingApprovalMatrices)
-          .set({ isActive: parsed.data.isActive, updatedAt: new Date() })
-          .where(eq(borrowingApprovalMatrices.id, existing.id))
-      }
-
-      const currentSteps = await tx
-        .select({ id: borrowingApprovalMatrixSteps.id })
-        .from(borrowingApprovalMatrixSteps)
-        .where(eq(borrowingApprovalMatrixSteps.matrixId, matrixId))
-
-      if (currentSteps.length > 0) {
-        await tx.delete(borrowingApprovalMatrixSteps).where(eq(borrowingApprovalMatrixSteps.matrixId, matrixId))
-      }
-
-      await tx.insert(borrowingApprovalMatrixSteps).values([
-        { matrixId, stepOrder: 1, approverRole: "dosen" },
-        { matrixId, stepOrder: 2, approverRole: "petugas_plp" },
-      ])
+    const existing = await db.query.borrowingApprovalMatrices.findFirst({
+      where: eq(borrowingApprovalMatrices.labId, parsed.data.labId),
+      columns: { id: true },
     })
+
+    if (existing?.id) {
+      await db
+        .update(borrowingApprovalMatrices)
+        .set({
+          isActive: parsed.data.isActive,
+          step1ApproverUserId: parsed.data.step1ApproverUserId,
+          step2ApproverUserId: parsed.data.step2ApproverUserId,
+          updatedAt: new Date(),
+        })
+        .where(eq(borrowingApprovalMatrices.id, existing.id))
+    } else {
+      await db.insert(borrowingApprovalMatrices).values({
+        labId: parsed.data.labId,
+        isActive: parsed.data.isActive,
+        step1ApproverUserId: parsed.data.step1ApproverUserId,
+        step2ApproverUserId: parsed.data.step2ApproverUserId,
+      })
+    }
   } catch (error) {
     console.error("saveBorrowingApprovalMatrixAction error:", error)
-    return { ok: false, message: "Gagal menyimpan matrix approval." }
+    const message =
+      error instanceof Error && error.message
+        ? `Gagal menyimpan matrix approval: ${error.message}`
+        : "Gagal menyimpan matrix approval."
+    return { ok: false, message }
   }
 
   await writeSecurityAuditLog({
@@ -113,11 +141,15 @@ export async function saveBorrowingApprovalMatrixAction(
     actorRole: "admin",
     targetType: "lab",
     targetId: parsed.data.labId,
-    metadata: { isActive: parsed.data.isActive, flow: "dosen->petugas_plp" },
+    metadata: {
+      isActive: parsed.data.isActive,
+      flow: "dosen->petugas_plp",
+      step1ApproverUserId: parsed.data.step1ApproverUserId,
+      step2ApproverUserId: parsed.data.step2ApproverUserId,
+    },
   })
 
   revalidatePath("/dashboard/approval-matrix")
   revalidatePath("/dashboard/borrowing")
   return { ok: true, message: "Matrix approval berhasil disimpan." }
 }
-
