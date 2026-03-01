@@ -118,6 +118,19 @@ export const userLabAssignments = pgTable(
   ],
 )
 
+export const userNotificationStates = pgTable(
+  "user_notification_states",
+  {
+    userId: uuid("user_id")
+      .notNull()
+      .primaryKey()
+      .references(() => users.id, { onDelete: "cascade" }),
+    borrowingLastReadAt: timestamp("borrowing_last_read_at", { withTimezone: true }),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [index("user_notification_states_updated_idx").on(t.updatedAt)],
+)
+
 export const securityAuditLogs = pgTable(
   "security_audit_logs",
   {

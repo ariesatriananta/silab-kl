@@ -1,11 +1,14 @@
 import Link from "next/link"
 import { notFound, redirect } from "next/navigation"
 import { and, asc, eq } from "drizzle-orm"
+import Image from "next/image"
 
 import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
 import {
   borrowingApprovals,
+  borrowingReturnItems,
+  borrowingReturns,
   borrowingTransactionItems,
   borrowingTransactions,
   consumableItems,
@@ -83,7 +86,7 @@ export default async function BorrowingProofPage({
     if (!assignment) redirect("/dashboard/borrowing")
   }
 
-  const [items, approvals] = await Promise.all([
+  const [items, approvals, returnRows] = await Promise.all([
     db
       .select({
         id: borrowingTransactionItems.id,
@@ -106,12 +109,34 @@ export default async function BorrowingProofPage({
         note: borrowingApprovals.note,
         decidedAt: borrowingApprovals.decidedAt,
         approverName: users.fullName,
+        approverRole: users.role,
       })
       .from(borrowingApprovals)
       .innerJoin(users, eq(users.id, borrowingApprovals.approverUserId))
       .where(eq(borrowingApprovals.transactionId, row.id))
       .orderBy(asc(borrowingApprovals.decidedAt)),
+    db
+      .select({
+        transactionItemId: borrowingReturnItems.transactionItemId,
+        returnedAt: borrowingReturns.returnedAt,
+        returnCondition: borrowingReturnItems.returnCondition,
+      })
+      .from(borrowingReturnItems)
+      .innerJoin(borrowingReturns, eq(borrowingReturns.id, borrowingReturnItems.returnId))
+      .where(eq(borrowingReturns.transactionId, row.id))
+      .orderBy(asc(borrowingReturns.returnedAt)),
   ])
+
+  const returnByItemId = new Map<
+    string,
+    { returnedAt: Date | null; returnCondition: "baik" | "maintenance" | "damaged" }
+  >()
+  for (const ret of returnRows) {
+    returnByItemId.set(ret.transactionItemId, {
+      returnedAt: ret.returnedAt,
+      returnCondition: ret.returnCondition,
+    })
+  }
 
   const statusLabelMap: Record<string, string> = {
     submitted: "Draft",
@@ -124,6 +149,14 @@ export default async function BorrowingProofPage({
     rejected: "Ditolak",
   }
 
+  const plpApproverName =
+    approvals.find((a) => a.decision === "approved" && a.approverRole === "petugas_plp")?.approverName ?? "-"
+  const dosenApproval = approvals.find((a) => a.approverRole === "dosen")
+  const plpApproval = approvals.find((a) => a.approverRole === "petugas_plp")
+
+  const decisionLabel = (decision: "approved" | "rejected" | null | undefined) =>
+    decision ? (decision === "approved" ? "Disetujui" : "Ditolak") : "-"
+
   return (
     <div className="min-h-screen bg-muted/20 text-black print:bg-white">
       <div className="mx-auto max-w-5xl p-4 sm:p-6 print:max-w-4xl print:p-0">
@@ -135,87 +168,133 @@ export default async function BorrowingProofPage({
         </div>
 
         <div className="mx-auto rounded-2xl border border-black bg-white p-6 shadow-sm print:rounded-none print:border-none print:p-6 print:shadow-none">
-          <header className="border-b border-black pb-4 text-center">
-            <p className="text-sm font-semibold">LABORATORIUM JURUSAN KESEHATAN LINGKUNGAN</p>
-            <p className="text-xs">Kemenkes Poltekkes Surabaya</p>
-            <h1 className="mt-3 text-lg font-bold">LEMBAR PEMINJAMAN ALAT LABORATORIUM</h1>
+          <header className="border-b border-black pb-3">
+            <div className="grid grid-cols-[1fr_auto] items-start gap-4">
+              <div className="pt-1">
+                <Image
+                  src="/logo.png"
+                  alt="Logo Kemenkes Poltekkes Surabaya"
+                  width={260}
+                  height={72}
+                  className="h-auto w-[220px]"
+                  priority
+                />
+              </div>
+              <div className="text-right leading-tight mt-2">
+                <p className="text-[13px] font-bold uppercase">Laboratorium</p>
+                <p className="text-[13px] font-bold uppercase">Jurusan Kesehatan Lingkungan</p>
+                <p className="mt-1 text-[12px]">Jl. Raya Menur 118 A Surabaya</p>
+              </div>
+            </div>
           </header>
-
-          <section className="mt-4 grid grid-cols-1 gap-2 rounded-lg border border-black/40 p-3 text-sm md:grid-cols-2 print:rounded-none print:border-none print:p-0">
-            <div><span className="font-semibold">Kode Transaksi:</span> {row.code}</div>
-            <div><span className="font-semibold">Status:</span> {statusLabelMap[row.status] ?? row.status}</div>
-            <div><span className="font-semibold">Laboratorium:</span> {row.labName}</div>
-            <div><span className="font-semibold">Tanggal Pengajuan:</span> {fmtDate(row.requestedAt)}</div>
-            <div><span className="font-semibold">Peminjam:</span> {row.requesterName}</div>
-            <div><span className="font-semibold">NIM:</span> {row.requesterNim ?? "-"}</div>
-            <div><span className="font-semibold">Mata Kuliah:</span> {row.courseName}</div>
-            <div><span className="font-semibold">Materi:</span> {row.materialTopic}</div>
-            <div><span className="font-semibold">Semester:</span> {row.semesterLabel}</div>
-            <div><span className="font-semibold">Kelompok:</span> {row.groupName}</div>
-            <div className="md:col-span-2"><span className="font-semibold">Dosen Pembimbing:</span> {row.advisorLecturerName ?? "-"}</div>
-            <div className="md:col-span-2"><span className="font-semibold">Keperluan:</span> {row.purpose}</div>
-            <div><span className="font-semibold">Waktu Pinjam:</span> {fmtDateTime(row.handedOverAt)}</div>
-            <div><span className="font-semibold">Batas Kembali:</span> {fmtDate(row.dueDate)}</div>
+          <h1 className="mt-5 text-md font-bold text-center">LEMBAR PEMINJAMAN ALAT LABORATORIUM</h1>
+          <section className="mt-4 rounded-2xl border border-black/30 px-4 py-3 text-sm">
+            <table className="w-full border-collapse">
+              <tbody>
+                <tr>
+                  <td className="w-1/2 align-top pr-5">
+                    <div className="space-y-1">
+                      <div className="flex">
+                        <span className="w-28 font-semibold">Mata Kuliah</span>
+                        <span className="w-4">:</span>
+                        <span>{row.courseName}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-28 font-semibold">Materi</span>
+                        <span className="w-4">:</span>
+                        <span>{row.materialTopic}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-28 font-semibold">Semester</span>
+                        <span className="w-4">:</span>
+                        <span>{row.semesterLabel}</span>
+                      </div>
+                    </div>
+                  </td>
+                  <td className="w-1/2 align-top pl-5">
+                    <div className="space-y-1">
+                      <div className="flex">
+                        <span className="w-36 font-semibold">Waktu Pengajuan</span>
+                        <span className="w-4">:</span>
+                        <span>{fmtDateTime(row.requestedAt)}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-36 font-semibold">Keperluan</span>
+                        <span className="w-4">:</span>
+                        <span>{row.purpose}</span>
+                      </div>
+                      <div className="flex">
+                        <span className="w-36 font-semibold">Kelompok</span>
+                        <span className="w-4">:</span>
+                        <span>{row.groupName}</span>
+                      </div>
+                    </div>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
           </section>
 
           <section className="mt-5">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Rincian Item Peminjaman</h2>
-              <span className="text-xs text-neutral-600">Alat + bahan dalam satu transaksi</span>
-            </div>
-            <table className="w-full border-collapse text-sm">
+            <table className="w-full border-collapse text-xs">
               <thead>
                 <tr>
-                  <th className="border border-black px-2 py-1 text-left" rowSpan={2}>No</th>
+                  <th className="border border-black px-2 py-1 text-center w-5" rowSpan={2}>No</th>
                   <th className="border border-black px-2 py-1 text-left" rowSpan={2}>Nama Alat/Bahan</th>
-                  <th className="border border-black px-2 py-1 text-left" rowSpan={2}>Jenis</th>
-                  <th className="border border-black px-2 py-1 text-left" rowSpan={2}>Kode Unit</th>
-                  <th className="border border-black px-2 py-1 text-right" rowSpan={2}>Jumlah</th>
+                  <th className="border border-black px-2 py-1 text-center" rowSpan={2}>Jumlah</th>
                   <th className="border border-black px-2 py-1 text-center" colSpan={2}>Waktu</th>
                   <th className="border border-black px-2 py-1 text-center" colSpan={2}>Kondisi</th>
-                  <th className="border border-black px-2 py-1 text-left" rowSpan={2}>Paraf Petugas</th>
+                  <th className="border border-black px-2 py-1 text-center w-15" rowSpan={2}>Paraf Petugas</th>
                 </tr>
                 <tr>
-                  <th className="border border-black px-2 py-1 text-left">Pinjam</th>
-                  <th className="border border-black px-2 py-1 text-left">Kembali</th>
-                  <th className="border border-black px-2 py-1 text-left">Pinjam</th>
-                  <th className="border border-black px-2 py-1 text-left">Kembali</th>
+                  <th className="border border-black px-2 py-1 text-center">Pinjam</th>
+                  <th className="border border-black px-2 py-1 text-center">Kembali</th>
+                  <th className="border border-black px-2 py-1 text-center">Pinjam</th>
+                  <th className="border border-black px-2 py-1 text-center">Kembali</th>
                 </tr>
               </thead>
               <tbody>
                 {items.length === 0 && (
                   <tr>
-                    <td colSpan={10} className="border border-black px-2 py-2 text-center">
+                    <td colSpan={8} className="border border-black px-2 py-2 text-center">
                       Tidak ada item.
                     </td>
                   </tr>
                 )}
-                {items.map((item, idx) => (
+                {items.map((item, idx) => {
+                  const returnInfo = returnByItemId.get(item.id)
+                  return (
                   <tr key={item.id}>
-                    <td className="border border-black px-2 py-1">{idx + 1}</td>
+                    <td className="border border-black px-2 py-1 text-center">{idx + 1}</td>
                     <td className="border border-black px-2 py-1">
                       {item.itemType === "tool_asset" ? (item.toolName ?? "Alat") : (item.consumableName ?? "Bahan")}
                     </td>
-                    <td className="border border-black px-2 py-1">
-                      {item.itemType === "tool_asset" ? "Alat" : "Bahan"}
-                    </td>
-                    <td className="border border-black px-2 py-1">
-                      {item.itemType === "tool_asset" ? (item.assetCode ?? "-") : "-"}
-                    </td>
-                    <td className="border border-black px-2 py-1 text-right">
+                    <td className="border border-black px-2 py-1 text-center">
                       {item.qty} {item.itemType === "consumable" ? item.consumableUnit ?? "" : "unit"}
                     </td>
-                    <td className="border border-black px-2 py-1 text-xs">{idx === 0 ? fmtDateTime(row.handedOverAt) : ""}</td>
-                    <td className="border border-black px-2 py-1 text-xs">{idx === 0 ? fmtDate(row.dueDate) : ""}</td>
-                    <td className="border border-black px-2 py-1 text-xs">(*)</td>
-                    <td className="border border-black px-2 py-1 text-xs">(*)</td>
+                    <td className="border border-black px-1 py-1 text-[10px] whitespace-nowrap text-center">
+                      {fmtDateTime(row.handedOverAt)}
+                    </td>
+                    <td className="border border-black px-1 py-1 text-[10px] whitespace-nowrap text-center">
+                      {item.itemType === "tool_asset" ? fmtDateTime(returnInfo?.returnedAt ?? null) : "-"}
+                    </td>
+                    <td className="border border-black px-2 py-1 text-center">Baik</td>
+                    <td className="border border-black px-2 py-1 text-center">
+                      {item.itemType === "tool_asset"
+                        ? returnInfo
+                          ? returnInfo.returnCondition === "baik"
+                            ? "Baik"
+                            : returnInfo.returnCondition === "maintenance"
+                              ? "Maintenance"
+                              : "Rusak"
+                          : "-"
+                        : "-"}
+                    </td>
                     <td className="border border-black px-2 py-1">&nbsp;</td>
                   </tr>
-                ))}
+                )})}
                 {Array.from({ length: Math.max(0, 12 - items.length) }).map((_, idx) => (
                   <tr key={`blank-${idx}`}>
-                    <td className="border border-black px-2 py-1">&nbsp;</td>
-                    <td className="border border-black px-2 py-1">&nbsp;</td>
                     <td className="border border-black px-2 py-1">&nbsp;</td>
                     <td className="border border-black px-2 py-1">&nbsp;</td>
                     <td className="border border-black px-2 py-1">&nbsp;</td>
@@ -233,54 +312,67 @@ export default async function BorrowingProofPage({
             </p>
           </section>
 
-          <section className="mt-5">
-            <div className="mb-2 flex items-center justify-between">
-              <h2 className="text-sm font-semibold">Riwayat Approval</h2>
-              <span className="text-xs text-neutral-600">{approvals.length} keputusan</span>
+          <section className="mt-4 text-sm">
+            <div className="mb-4 grid grid-cols-3 font-semibold">
+              <div />
+              <div />
+              <div className="pl-8 text-left">
+                <p>Surabaya, {fmtDate(new Date())}</p>
+              </div>
             </div>
-            <table className="w-full border-collapse text-sm">
-              <thead>
-                <tr>
-                  <th className="border border-black px-2 py-1 text-left">No</th>
-                  <th className="border border-black px-2 py-1 text-left">Petugas</th>
-                  <th className="border border-black px-2 py-1 text-left">Keputusan</th>
-                  <th className="border border-black px-2 py-1 text-left">Waktu</th>
-                  <th className="border border-black px-2 py-1 text-left">Catatan</th>
-                </tr>
-              </thead>
-              <tbody>
-                {approvals.length === 0 && (
-                  <tr>
-                    <td colSpan={5} className="border border-black px-2 py-2 text-center">
-                      Belum ada approval.
-                    </td>
-                  </tr>
-                )}
-                {approvals.map((a, idx) => (
-                  <tr key={`${a.approverName}-${idx}`}>
-                    <td className="border border-black px-2 py-1">{idx + 1}</td>
-                    <td className="border border-black px-2 py-1">{a.approverName}</td>
-                    <td className="border border-black px-2 py-1">
-                      {a.decision === "approved" ? "Disetujui" : "Ditolak"}
-                    </td>
-                    <td className="border border-black px-2 py-1">{fmtDateTime(a.decidedAt)}</td>
-                    <td className="border border-black px-2 py-1">{a.note ?? "-"}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </section>
-
-          <section className="mt-8 grid grid-cols-2 gap-8 text-sm">
+            <div className="grid grid-cols-3 gap-3">
             <div className="text-center">
-              <p>Mengetahui,</p>
-              <p>Dosen Pembimbing</p>
-              <div className="mt-16 border-t border-black pt-1" />
+              <div className="space-y-0.5 leading-none">
+                <p>Mengetahui,</p>
+                <p>Dosen Pembimbing</p>
+              </div>
+              <div className="mt-2 h-[2.9rem] space-y-0 text-xs leading-none">
+                <p
+                  className={`text-sm font-bold uppercase ${
+                    dosenApproval?.decision === "approved"
+                      ? "text-emerald-700"
+                      : dosenApproval?.decision === "rejected"
+                        ? "text-red-700"
+                        : "text-neutral-700"
+                  }`}
+                >
+                  {decisionLabel(dosenApproval?.decision)}
+                </p>
+                <p>{fmtDateTime(dosenApproval?.decidedAt ?? null)}</p>
+                <p className="italic">{dosenApproval?.note ? `(${dosenApproval.note})` : "\u00A0"}</p>
+              </div>
+              <div className="mt-0.5 border-t border-black pt-0.5">{row.advisorLecturerName ?? "-"}</div>
             </div>
             <div className="text-center">
-              <p>Surabaya, {fmtDate(new Date())}</p>
-              <p>Peminjam / Mahasiswa</p>
-              <div className="mt-16 border-t border-black pt-1">{row.requesterName}</div>
+              <div className="space-y-0.5 leading-none">
+                <p>Menyetujui,</p>
+                <p>Petugas PLP</p>
+              </div>
+              <div className="mt-2 h-[2.9rem] space-y-0 text-xs leading-none">
+                <p
+                  className={`text-sm font-bold uppercase ${
+                    plpApproval?.decision === "approved"
+                      ? "text-emerald-700"
+                      : plpApproval?.decision === "rejected"
+                        ? "text-red-700"
+                        : "text-neutral-700"
+                  }`}
+                >
+                  {decisionLabel(plpApproval?.decision)}
+                </p>
+                <p>{fmtDateTime(plpApproval?.decidedAt ?? null)}</p>
+                <p className="italic">{plpApproval?.note ? `(${plpApproval.note})` : "\u00A0"}</p>
+              </div>
+              <div className="mt-0.5 border-t border-black pt-0.5">{plpApproverName}</div>
+            </div>
+            <div className="text-center">
+              <div className="space-y-0.5 leading-none">
+                <p>Peminjam,</p>
+                <p>Mahasiswa</p>
+              </div>
+              <div className="mt-2 h-[2.9rem]" />
+              <div className="mt-0.5 border-t border-black pt-0.5">{row.requesterName}</div>
+            </div>
             </div>
           </section>
         </div>

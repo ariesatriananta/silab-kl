@@ -541,9 +541,19 @@ export function LabUsagePageClient({
         onValueChange={(v) => setActiveTab(v as "schedule" | "history")}
         className="flex flex-col gap-4"
       >
-        <TabsList className="grid w-full grid-cols-2 rounded-xl bg-muted/50 p-1 sm:w-auto">
-          <TabsTrigger value="schedule" className="rounded-lg">Jadwal Lab</TabsTrigger>
-          <TabsTrigger value="history" className="rounded-lg">Riwayat Penggunaan</TabsTrigger>
+        <TabsList className="grid h-12 w-full grid-cols-2 items-stretch gap-1 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-1 sm:w-auto">
+          <TabsTrigger
+            value="schedule"
+            className="h-full w-full rounded-xl border border-transparent bg-transparent py-0 text-sm font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          >
+            Jadwal Lab
+          </TabsTrigger>
+          <TabsTrigger
+            value="history"
+            className="h-full w-full rounded-xl border border-transparent bg-transparent py-0 text-sm font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          >
+            Riwayat Penggunaan
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="schedule" className="mt-0">
@@ -639,9 +649,6 @@ export function LabUsagePageClient({
         </TabsContent>
 
         <TabsContent value="history" className="mt-0">
-          <div className="mb-4 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            Fokus tab ini: pencatatan penggunaan aktual dan peninjauan absensi per sesi.
-          </div>
           <Card className="border-border/50 bg-card shadow-sm">
             <CardHeader className="pb-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">

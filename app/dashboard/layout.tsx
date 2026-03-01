@@ -1,13 +1,23 @@
 "use client"
 
+import dynamic from "next/dynamic"
 import { Sparkles } from "lucide-react"
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Separator } from "@/components/ui/separator"
 import { usePathname } from "next/navigation"
-import { HeaderUserMenu } from "@/components/header-user-menu"
-import { HeaderNotificationMenu } from "@/components/header-notification-menu"
-import { ThemeToggle } from "@/components/theme-toggle"
+
+const HeaderUserMenu = dynamic(
+  () => import("@/components/header-user-menu").then((m) => m.HeaderUserMenu),
+  { ssr: false },
+)
+const HeaderNotificationMenu = dynamic(
+  () => import("@/components/header-notification-menu").then((m) => m.HeaderNotificationMenu),
+  { ssr: false },
+)
+const ThemeToggle = dynamic(() => import("@/components/theme-toggle").then((m) => m.ThemeToggle), {
+  ssr: false,
+})
 
 const pageMeta: Record<string, { title: string; subtitle: string }> = {
   "/dashboard": {

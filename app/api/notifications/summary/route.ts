@@ -1,9 +1,9 @@
-import { and, eq, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, or, sql } from "drizzle-orm"
 import { NextResponse } from "next/server"
 
 import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
-import { borrowingTransactions, userLabAssignments, users } from "@/lib/db/schema"
+import { borrowingTransactions, userLabAssignments, userNotificationStates, users } from "@/lib/db/schema"
 
 type ItemTone = "warning" | "danger" | "info" | "success"
 
@@ -16,12 +16,27 @@ type NotificationItem = {
   tone: ItemTone
 }
 
+function toMillis(value: Date | string | null | undefined) {
+  if (!value) return null
+  if (value instanceof Date) return Number.isNaN(value.getTime()) ? null : value.getTime()
+  const t = Date.parse(value)
+  return Number.isNaN(t) ? null : t
+}
+
 async function countByWhere(whereClause: ReturnType<typeof and> | undefined) {
   const rows = await db
     .select({ total: sql<number>`count(*)` })
     .from(borrowingTransactions)
     .where(whereClause)
   return Number(rows[0]?.total ?? 0)
+}
+
+async function maxUpdatedAtByWhere(whereClause: ReturnType<typeof and> | undefined) {
+  const rows = await db
+    .select({ latest: sql<Date | null>`max(${borrowingTransactions.updatedAt})` })
+    .from(borrowingTransactions)
+    .where(whereClause)
+  return rows[0]?.latest ?? null
 }
 
 async function getAssignedLabIds(userId: string) {
@@ -69,6 +84,7 @@ export async function GET() {
   const role = session.user.role
   const userId = session.user.id
   const items: NotificationItem[] = []
+  let latestActionAt: Date | null = null
 
   if (role === "dosen") {
     const rows = await db
@@ -77,6 +93,29 @@ export async function GET() {
       .where(eq(users.id, userId))
       .limit(1)
     const total = Number(rows[0]?.total ?? 0)
+    latestActionAt = await maxUpdatedAtByWhere(
+      and(
+        inArray(borrowingTransactions.status, ["submitted", "pending_approval"]),
+        sql`${borrowingTransactions.approvalMatrixId} is not null`,
+        sql`not exists (
+          select 1
+          from borrowing_approvals ba_self
+          where ba_self.transaction_id = ${borrowingTransactions.id}
+            and ba_self.approver_user_id = ${userId}
+        )`,
+        sql`(
+          select count(*)
+          from borrowing_approvals ba_ok
+          where ba_ok.transaction_id = ${borrowingTransactions.id}
+            and ba_ok.decision = 'approved'
+        ) = 0`,
+        sql`exists (
+          select 1 from borrowing_approval_matrices bam
+          where bam.id = ${borrowingTransactions.approvalMatrixId}
+            and bam.step1_approver_user_id = ${userId}
+        )`,
+      ),
+    )
     if (total > 0) {
       items.push({
         id: "borrowing-approve-step1",
@@ -110,6 +149,40 @@ export async function GET() {
         ),
       ),
     ])
+    latestActionAt = await maxUpdatedAtByWhere(
+      and(
+        scopeWhere,
+        or(
+          and(
+            inArray(borrowingTransactions.status, ["submitted", "pending_approval"]),
+            sql`${borrowingTransactions.approvalMatrixId} is not null`,
+            sql`not exists (
+              select 1
+              from borrowing_approvals ba_self
+              where ba_self.transaction_id = ${borrowingTransactions.id}
+                and ba_self.approver_user_id = ${userId}
+            )`,
+            sql`(
+              select count(*)
+              from borrowing_approvals ba_ok
+              where ba_ok.transaction_id = ${borrowingTransactions.id}
+                and ba_ok.decision = 'approved'
+            ) = 1`,
+            sql`exists (
+              select 1 from borrowing_approval_matrices bam
+              where bam.id = ${borrowingTransactions.approvalMatrixId}
+                and bam.step2_approver_user_id = ${userId}
+            )`,
+          ),
+          eq(borrowingTransactions.status, "approved_waiting_handover"),
+          and(
+            inArray(borrowingTransactions.status, ["active", "partially_returned"]),
+            sql`${borrowingTransactions.dueDate} is not null`,
+            sql`${borrowingTransactions.dueDate} < now()`,
+          ),
+        ),
+      ),
+    )
 
     const approvalCount = Number(approvalRows[0]?.total ?? 0)
     if (approvalCount > 0) {
@@ -154,6 +227,17 @@ export async function GET() {
         ),
       ),
     ])
+    latestActionAt = await maxUpdatedAtByWhere(
+      or(
+        inArray(borrowingTransactions.status, ["submitted", "pending_approval"]),
+        eq(borrowingTransactions.status, "approved_waiting_handover"),
+        and(
+          inArray(borrowingTransactions.status, ["active", "partially_returned"]),
+          sql`${borrowingTransactions.dueDate} is not null`,
+          sql`${borrowingTransactions.dueDate} < now()`,
+        ),
+      ),
+    )
 
     if (pendingCount > 0) {
       items.push({
@@ -208,6 +292,15 @@ export async function GET() {
         ),
       ),
     ])
+    latestActionAt = await maxUpdatedAtByWhere(
+      and(
+        eq(borrowingTransactions.requesterUserId, userId),
+        or(
+          inArray(borrowingTransactions.status, ["submitted", "pending_approval"]),
+          inArray(borrowingTransactions.status, ["active", "partially_returned"]),
+        ),
+      ),
+    )
 
     if (pendingCount > 0) {
       items.push({
@@ -241,7 +334,19 @@ export async function GET() {
     }
   }
 
-  const totalUnread = items.reduce((acc, item) => acc + item.count, 0)
+  const actionableCount = items.reduce((acc, item) => acc + item.count, 0)
+  const state = await db.query.userNotificationStates.findFirst({
+    where: eq(userNotificationStates.userId, userId),
+    columns: { borrowingLastReadAt: true },
+  })
+
+  const latestActionAtMs = toMillis(latestActionAt)
+  const lastReadAtMs = toMillis(state?.borrowingLastReadAt)
+  const isRead =
+    actionableCount <= 0 ||
+    !latestActionAtMs ||
+    (lastReadAtMs !== null && lastReadAtMs >= latestActionAtMs)
+  const totalUnread = isRead ? 0 : actionableCount
   return NextResponse.json({
     totalUnread,
     items,

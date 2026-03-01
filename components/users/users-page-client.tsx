@@ -448,9 +448,19 @@ export function UsersPageClient({
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "users" | "audit")} className="flex flex-col gap-4">
-        <TabsList className="grid w-full grid-cols-2 rounded-xl bg-muted/50 p-1 sm:w-auto">
-          <TabsTrigger value="users" className="rounded-lg">Daftar Pengguna</TabsTrigger>
-          <TabsTrigger value="audit" className="rounded-lg">Audit Pengguna</TabsTrigger>
+        <TabsList className="grid h-12 w-full grid-cols-2 items-stretch gap-1 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-1 sm:w-auto">
+          <TabsTrigger
+            value="users"
+            className="h-full w-full rounded-xl border border-transparent bg-transparent py-0 text-sm font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          >
+            Daftar Pengguna
+          </TabsTrigger>
+          <TabsTrigger
+            value="audit"
+            className="h-full w-full rounded-xl border border-transparent bg-transparent py-0 text-sm font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          >
+            Audit Pengguna
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="users" className="mt-0 space-y-4">

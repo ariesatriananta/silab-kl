@@ -33,6 +33,17 @@ import {
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
+import { Checkbox } from "@/components/ui/checkbox"
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog"
 import {
   Dialog,
   DialogContent,
@@ -350,11 +361,28 @@ export function BorrowingPageClient({
   const [materialTopic, setMaterialTopic] = useState("")
   const [semesterLabel, setSemesterLabel] = useState("")
   const [groupName, setGroupName] = useState("")
-  const [advisorLecturerName, setAdvisorLecturerName] = useState("")
   const [approvalNote, setApprovalNote] = useState("")
   const [rejectNote, setRejectNote] = useState("")
   const [handoverNote, setHandoverNote] = useState("")
   const [returnNote, setReturnNote] = useState("")
+  const [returnSelectionMap, setReturnSelectionMap] = useState<
+    Record<string, "baik" | "maintenance" | "damaged">
+  >({})
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    mode: "approve" | "reject"
+    source: "list" | "detail"
+    transactionId: string | null
+  }>({
+    open: false,
+    mode: "approve",
+    source: "list",
+    transactionId: null,
+  })
+  const quickApproveFormRef = useRef<HTMLFormElement>(null)
+  const quickRejectFormRef = useRef<HTMLFormElement>(null)
+  const detailApproveFormRef = useRef<HTMLFormElement>(null)
+  const detailRejectFormRef = useRef<HTMLFormElement>(null)
 
   const [createState, createAction, createPending] = useActionState(
     createBorrowingRequestAction,
@@ -444,6 +472,7 @@ export function BorrowingPageClient({
     () => createOptions.approvalRoutes.find((route) => route.labId === selectedLabId) ?? null,
     [createOptions.approvalRoutes, selectedLabId],
   )
+  const autoAdvisorLecturerName = selectedApprovalRoute?.dosenApprovers[0]?.name ?? ""
   const isApprovalRouteReady = selectedApprovalRoute?.isReady ?? false
   const toolSearchResults = useMemo(() => {
     const q = deferredToolQuery.trim().toLowerCase()
@@ -484,6 +513,20 @@ export function BorrowingPageClient({
   const returnableToolItems = (selectedBorrowing?.items ?? []).filter(
     (item) => item.itemType === "tool_asset" && !item.returned,
   )
+  const selectedReturnItemIds = useMemo(
+    () => returnableToolItems.map((item) => item.id).filter((id) => Boolean(returnSelectionMap[id])),
+    [returnSelectionMap, returnableToolItems],
+  )
+  const returnItemsPayload = useMemo(
+    () =>
+      JSON.stringify(
+        selectedReturnItemIds.map((transactionItemId) => ({
+          transactionItemId,
+          returnCondition: returnSelectionMap[transactionItemId] ?? "baik",
+        })),
+      ),
+    [selectedReturnItemIds, returnSelectionMap],
+  )
   const selectedBorrowingActionHint = selectedBorrowing
     ? getNextActionHint({
         status: selectedBorrowing.status,
@@ -491,6 +534,28 @@ export function BorrowingPageClient({
         pendingReturnTools: returnableToolItems.length,
       })
     : null
+
+  useEffect(() => {
+    if (!selectedBorrowingId) {
+      setReturnSelectionMap({})
+      return
+    }
+    const borrowing = details[selectedBorrowingId]
+    if (!borrowing) {
+      setReturnSelectionMap({})
+      return
+    }
+    const ids = borrowing.items
+      .filter((item) => item.itemType === "tool_asset" && !item.returned)
+      .map((item) => item.id)
+    setReturnSelectionMap((prev) => {
+      const next: Record<string, "baik" | "maintenance" | "damaged"> = {}
+      for (const id of ids) {
+        next[id] = prev[id] ?? "baik"
+      }
+      return next
+    })
+  }, [details, selectedBorrowingId])
   const detailHasAvailableActions = !!(
     selectedBorrowing &&
     ((canApprove && selectedBorrowing.status === "pending") ||
@@ -518,10 +583,7 @@ export function BorrowingPageClient({
     const nextPage = next.page ?? 1
     if (nextStatus !== "all") params.set("status", nextStatus)
     else params.delete("status")
-    if (
-      nextScope !==
-      (role === "petugas_plp" || role === "dosen" ? "waiting_me" : role === "mahasiswa" ? "mine" : "all")
-    )
+    if (nextScope !== "all")
       params.set("scope", nextScope)
     else params.delete("scope")
     if (nextPage > 1) params.set("page", String(nextPage))
@@ -581,6 +643,31 @@ export function BorrowingPageClient({
     })
   }
 
+  const openApprovalConfirm = (mode: "approve" | "reject", source: "list" | "detail", transactionId: string) => {
+    setConfirmDialog({ open: true, mode, source, transactionId })
+  }
+
+  const submitConfirmedApproval = () => {
+    const form =
+      confirmDialog.source === "list"
+        ? confirmDialog.mode === "approve"
+          ? quickApproveFormRef.current
+          : quickRejectFormRef.current
+        : confirmDialog.mode === "approve"
+          ? detailApproveFormRef.current
+          : detailRejectFormRef.current
+
+    if (!form) {
+      setConfirmDialog((prev) => ({ ...prev, open: false }))
+      return
+    }
+
+    if (!form.reportValidity()) return
+
+    setConfirmDialog((prev) => ({ ...prev, open: false }))
+    form.requestSubmit()
+  }
+
   useEffect(() => {
     const feedbacks = [
       createState ? { key: `create:${createState.ok}:${createState.message}`, title: "Pengajuan", ...createState } : null,
@@ -615,7 +702,6 @@ export function BorrowingPageClient({
       setMaterialTopic("")
       setSemesterLabel("")
       setGroupName("")
-      setAdvisorLecturerName("")
     })
   }, [createState])
 
@@ -693,81 +779,11 @@ export function BorrowingPageClient({
                   </SelectContent>
                 </Select>
               </div>
-              <div
-                className={`rounded-xl border px-3 py-3 text-sm ${
-                  isApprovalRouteReady
-                    ? "border-success/25 bg-success/5"
-                    : "border-warning/25 bg-warning/5"
-                }`}
-              >
-                <p className="font-medium text-foreground">Rute Approval Lab</p>
-                <div className="mt-2 grid gap-2 sm:grid-cols-2">
-                  <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Tahap 1</p>
-                    <p className="text-sm font-medium text-foreground">Dosen</p>
-                    {selectedApprovalRoute?.dosenApprovers.length ? (
-                      <p className="text-xs text-muted-foreground">
-                        {selectedApprovalRoute.dosenApprovers
-                          .map((item) =>
-                            item.identifier ? `${item.name} (${item.identifier})` : item.name,
-                          )
-                          .join(", ")}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Belum ada dosen ter-assign.</p>
-                    )}
-                  </div>
-                  <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
-                    <p className="text-xs uppercase tracking-wide text-muted-foreground">Tahap 2</p>
-                    <p className="text-sm font-medium text-foreground">Petugas PLP</p>
-                    {selectedApprovalRoute?.plpApprovers.length ? (
-                      <p className="text-xs text-muted-foreground">
-                        {selectedApprovalRoute.plpApprovers
-                          .map((item) =>
-                            item.identifier ? `${item.name} (${item.identifier})` : item.name,
-                          )
-                          .join(", ")}
-                      </p>
-                    ) : (
-                      <p className="text-xs text-muted-foreground">Belum ada petugas PLP ter-assign.</p>
-                    )}
-                  </div>
+              <div className="grid gap-3 lg:grid-cols-3">
+                <div className="grid gap-2">
+                  <Label htmlFor="purpose">Keperluan</Label>
+                  <Input id="purpose" name="purpose" placeholder="Contoh: Praktikum Hematologi" required />
                 </div>
-                {!isApprovalRouteReady && (
-                  <p className="mt-2 text-xs text-warning-foreground">
-                    Matrix approval lab belum siap. Admin harus aktifkan matrix urutan Dosen ke Petugas PLP dan assign
-                    user pada lab ini.
-                  </p>
-                )}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="requesterUserId">Peminjam (Mahasiswa)</Label>
-                {role === "mahasiswa" ? (
-                  <>
-                    <input type="hidden" name="requesterUserId" value={selectedRequesterId} />
-                    <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm">Akun Anda</div>
-                  </>
-                ) : (
-                  <Select name="requesterUserId" value={selectedRequesterId} onValueChange={setSelectedRequesterId}>
-                    <SelectTrigger id="requesterUserId" className="w-full">
-                      <SelectValue placeholder="Pilih mahasiswa" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {createOptions.requesters.map((requester) => (
-                        <SelectItem key={requester.id} value={requester.id}>
-                          {requester.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                )}
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="purpose">Keperluan</Label>
-                <Input id="purpose" name="purpose" placeholder="Contoh: Praktikum Hematologi" required />
-              </div>
-
-              <div className="grid gap-3 sm:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="courseName">Mata Kuliah</Label>
                   <Input
@@ -816,13 +832,13 @@ export function BorrowingPageClient({
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="advisorLecturerName">Dosen (opsional)</Label>
+                  <Label htmlFor="advisorLecturerName">Dosen</Label>
                   <Input
                     id="advisorLecturerName"
                     name="advisorLecturerName"
-                    value={advisorLecturerName}
-                    onChange={(e) => setAdvisorLecturerName(e.target.value)}
-                    placeholder="Nama dosen"
+                    value={autoAdvisorLecturerName}
+                    readOnly
+                    placeholder="Belum ada Approver-1 pada matrix lab"
                   />
                 </div>
               </div>
@@ -1019,6 +1035,78 @@ export function BorrowingPageClient({
                 </div>
               </div>
 
+              <div className="grid items-start gap-3 lg:grid-cols-2">
+                <div className="grid gap-2 self-start">
+                  <Label htmlFor="requesterUserId">Pemohon</Label>
+                  {role === "mahasiswa" ? (
+                    <>
+                      <input type="hidden" name="requesterUserId" value={selectedRequesterId} />
+                      <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm">Akun Anda</div>
+                    </>
+                  ) : (
+                    <Select name="requesterUserId" value={selectedRequesterId} onValueChange={setSelectedRequesterId}>
+                      <SelectTrigger id="requesterUserId" className="w-full">
+                        <SelectValue placeholder="Pilih mahasiswa" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {createOptions.requesters.map((requester) => (
+                          <SelectItem key={requester.id} value={requester.id}>
+                            {requester.label}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  )}
+                </div>
+                <div
+                  className={`rounded-xl border px-3 py-3 text-sm ${
+                    isApprovalRouteReady
+                      ? "border-success/25 bg-success/5"
+                      : "border-warning/25 bg-warning/5"
+                  }`}
+                >
+                  <p className="font-medium text-foreground">Rute Approval</p>
+                  <div className="mt-2 grid gap-2 sm:grid-cols-2">
+                    <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Tahap 1</p>
+                      <p className="text-sm font-medium text-foreground">Dosen</p>
+                      {selectedApprovalRoute?.dosenApprovers.length ? (
+                        <p className="text-xs text-muted-foreground">
+                          {selectedApprovalRoute.dosenApprovers
+                            .map((item) =>
+                              item.identifier ? `${item.name} (${item.identifier})` : item.name,
+                            )
+                            .join(", ")}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Belum ada dosen ter-assign.</p>
+                      )}
+                    </div>
+                    <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
+                      <p className="text-xs uppercase tracking-wide text-muted-foreground">Tahap 2</p>
+                      <p className="text-sm font-medium text-foreground">Petugas PLP</p>
+                      {selectedApprovalRoute?.plpApprovers.length ? (
+                        <p className="text-xs text-muted-foreground">
+                          {selectedApprovalRoute.plpApprovers
+                            .map((item) =>
+                              item.identifier ? `${item.name} (${item.identifier})` : item.name,
+                            )
+                            .join(", ")}
+                        </p>
+                      ) : (
+                        <p className="text-xs text-muted-foreground">Belum ada petugas PLP ter-assign.</p>
+                      )}
+                    </div>
+                  </div>
+                  {!isApprovalRouteReady && (
+                    <p className="mt-2 text-xs text-warning-foreground">
+                      Matrix approval lab belum siap. Admin harus aktifkan matrix urutan Dosen ke Petugas PLP dan assign
+                      user pada lab ini.
+                    </p>
+                  )}
+                </div>
+              </div>
+
               {(selectedTools.length === 0 && selectedConsumables.length === 0) && (
                 <div className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-warning-foreground">
                   Pilih minimal 1 alat atau 1 bahan sebelum kirim pengajuan.
@@ -1154,25 +1242,7 @@ export function BorrowingPageClient({
                 Pantau status pengajuan, lihat jadwal pengembalian, lalu cek detail transaksi jika perlu.
               </p>
             </div>
-          ) : (
-            <div className="flex flex-wrap items-center gap-2">
-              <Button type="button" variant={statusFilter === "all" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "all", page: 1 })}>
-                Semua
-              </Button>
-              <Button type="button" variant={statusFilter === "pending" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "pending", page: 1 })}>
-                Menunggu Approval
-              </Button>
-              <Button type="button" variant={statusFilter === "approved_waiting_handover" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "approved_waiting_handover", page: 1 })}>
-                Menunggu Serah Terima
-              </Button>
-              <Button type="button" variant={statusFilter === "active" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "active", page: 1 })}>
-                Aktif
-              </Button>
-              <Button type="button" variant={statusFilter === "overdue" ? "default" : "outline"} size="sm" onClick={() => applyListFilters({ status: "overdue", page: 1 })}>
-                Terlambat
-              </Button>
-            </div>
-          )}
+          ) : null}
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,18rem)_minmax(0,18rem)_1fr] xl:items-center">
             <Select
               value={statusFilter}
@@ -1208,7 +1278,7 @@ export function BorrowingPageClient({
                   <SelectValue placeholder="Filter Ruang Lingkup" />
                 </SelectTrigger>
                 <SelectContent>
-                  {role === "admin" && <SelectItem value="all">Semua Transaksi</SelectItem>}
+                  <SelectItem value="all">Semua</SelectItem>
                   {(role === "dosen" || role === "petugas_plp") && (
                     <SelectItem value="waiting_me">Menunggu Saya</SelectItem>
                   )}
@@ -1219,11 +1289,6 @@ export function BorrowingPageClient({
                 </SelectContent>
               </Select>
             )}
-            <p className="text-xs text-muted-foreground xl:justify-self-end xl:text-right">
-              {isMahasiswa
-                ? "Gunakan filter status untuk memantau progres pengajuan Anda (menunggu, aktif, atau sudah selesai)."
-                : "Fokuskan daftar ke status yang sedang perlu ditindaklanjuti agar proses operasional lebih cepat."}
-            </p>
           </div>
         </CardContent>
       </Card>
@@ -1372,20 +1437,39 @@ export function BorrowingPageClient({
                           <Button variant="ghost" size="icon" className="size-8" onClick={() => setSelectedBorrowingId(borrow.id)} aria-label="Lihat detail">
                             <Eye className="size-4" />
                           </Button>
+                          <Button variant="ghost" size="icon" className="size-8" asChild>
+                            <Link
+                              href={`/borrowing-proof/${borrow.id}`}
+                              target="_blank"
+                              rel="noreferrer"
+                              aria-label="Cetak bukti"
+                              title="Cetak bukti"
+                            >
+                              <Printer className="size-4" />
+                            </Link>
+                          </Button>
                           {showApprovalActions && (
                             <>
-                              <form action={approveBorrowingAction}>
-                                <input type="hidden" name="transactionId" value={borrow.id} />
-                                <Button type="submit" variant="ghost" size="icon" className="size-8 text-success-foreground hover:text-success-foreground" aria-label="Setujui">
-                                  <CheckCircle2 className="size-4" />
-                                </Button>
-                              </form>
-                              <form action={rejectBorrowingAction}>
-                                <input type="hidden" name="transactionId" value={borrow.id} />
-                                <Button type="submit" variant="ghost" size="icon" className="size-8 text-destructive hover:text-destructive" aria-label="Tolak">
-                                  <XCircle className="size-4" />
-                                </Button>
-                              </form>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-success-foreground hover:text-success-foreground"
+                                aria-label="Setujui"
+                                onClick={() => openApprovalConfirm("approve", "list", borrow.id)}
+                              >
+                                <CheckCircle2 className="size-4" />
+                              </Button>
+                              <Button
+                                type="button"
+                                variant="ghost"
+                                size="icon"
+                                className="size-8 text-destructive hover:text-destructive"
+                                aria-label="Tolak"
+                                onClick={() => openApprovalConfirm("reject", "list", borrow.id)}
+                              >
+                                <XCircle className="size-4" />
+                              </Button>
                             </>
                           )}
                         </div>
@@ -1430,7 +1514,7 @@ export function BorrowingPageClient({
       </Card>
 
       <Dialog open={!!selectedBorrowing} onOpenChange={() => setSelectedBorrowingId(null)}>
-        <DialogContent className="max-w-3xl max-h-[90vh] overflow-y-auto">
+        <DialogContent className="max-w-[95vw] md:max-w-[50vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Peminjaman {selectedBorrowing?.code}</DialogTitle>
             <DialogDescription>Informasi transaksi peminjaman dari database.</DialogDescription>
@@ -1468,27 +1552,31 @@ export function BorrowingPageClient({
                   </div>
                 </div>
               )}
-              <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-                Urutan baca yang disarankan: <span className="font-medium text-foreground">Ringkasan</span> {"->"}{" "}
-                <span className="font-medium text-foreground">Item Pengajuan</span> {"->"}{" "}
-                <span className="font-medium text-foreground">Riwayat</span>
-                {detailHasAvailableActions && (
-                  <>
-                    {" -> "} <span className="font-medium text-foreground">Tindakan</span>
-                  </>
-                )}
-                .
-              </div>
               <Tabs defaultValue="summary" className="flex flex-col gap-4">
                 <TabsList
-                  className={`grid w-full rounded-xl bg-muted/50 p-1 ${
+                  className={`grid h-12 w-full items-stretch gap-1 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-1 ${
                     detailHasAvailableActions ? "grid-cols-3" : "grid-cols-2"
                   }`}
                 >
-                  <TabsTrigger value="summary" className="rounded-lg">Ringkasan</TabsTrigger>
-                  <TabsTrigger value="history" className="rounded-lg">Riwayat</TabsTrigger>
+                  <TabsTrigger
+                    value="summary"
+                    className="h-full w-full rounded-xl border border-transparent bg-transparent py-0 text-sm font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+                  >
+                    Ringkasan
+                  </TabsTrigger>
+                  <TabsTrigger
+                    value="history"
+                    className="h-full w-full rounded-xl border border-transparent bg-transparent py-0 text-sm font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+                  >
+                    Riwayat
+                  </TabsTrigger>
                   {detailHasAvailableActions && (
-                    <TabsTrigger value="actions" className="rounded-lg">Tindakan</TabsTrigger>
+                    <TabsTrigger
+                      value="actions"
+                      className="h-full w-full rounded-xl border border-transparent bg-transparent py-0 text-sm font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+                    >
+                      Tindakan
+                    </TabsTrigger>
                   )}
                 </TabsList>
 
@@ -1735,7 +1823,7 @@ export function BorrowingPageClient({
                 <>
                   <div className="flex flex-col gap-3">
                     <p className="text-sm text-muted-foreground">
-                      Approval kedua (oleh user berbeda) akan mengubah status menjadi <span className="font-medium text-foreground">Menunggu Serah Terima</span>.
+                      Approval kedua akan mengubah status menjadi <span className="font-medium text-foreground">Menunggu Serah Terima</span>.
                     </p>
                     {role === "admin" && selectedBorrowing.adminOverrideReasonRequired && (
                       <div className="rounded-xl border border-warning/20 bg-warning/10 px-3 py-2 text-xs text-warning-foreground">
@@ -1770,7 +1858,7 @@ export function BorrowingPageClient({
                       </div>
                     )}
                     <div className="grid gap-3 sm:grid-cols-2">
-                      <form action={approveAction} className="flex flex-col gap-2">
+                      <form ref={detailApproveFormRef} action={approveAction} className="flex flex-col gap-2">
                         <input type="hidden" name="transactionId" value={selectedBorrowing.id} />
                         <Label htmlFor="approvalNote">
                           {role === "admin" && selectedBorrowing.adminOverrideReasonRequired
@@ -1786,12 +1874,17 @@ export function BorrowingPageClient({
                           maxLength={500}
                           required={role === "admin" && selectedBorrowing.adminOverrideReasonRequired}
                         />
-                        <Button type="submit" className="w-full" disabled={approvePending}>
+                        <Button
+                          type="button"
+                          className="w-full"
+                          disabled={approvePending}
+                          onClick={() => openApprovalConfirm("approve", "detail", selectedBorrowing.id)}
+                        >
                           <CheckCircle2 className="size-4" />
                           {approvePending ? "Memproses..." : "Setujui"}
                         </Button>
                       </form>
-                      <form action={rejectAction} className="flex flex-col gap-2">
+                      <form ref={detailRejectFormRef} action={rejectAction} className="flex flex-col gap-2">
                         <input type="hidden" name="transactionId" value={selectedBorrowing.id} />
                         <Label htmlFor="rejectNote">
                           {role === "admin" && selectedBorrowing.adminOverrideReasonRequired
@@ -1807,7 +1900,13 @@ export function BorrowingPageClient({
                           maxLength={500}
                           required={role === "admin" && selectedBorrowing.adminOverrideReasonRequired}
                         />
-                        <Button type="submit" variant="destructive" className="w-full" disabled={rejectPending}>
+                        <Button
+                          type="button"
+                          variant="destructive"
+                          className="w-full"
+                          disabled={rejectPending}
+                          onClick={() => openApprovalConfirm("reject", "detail", selectedBorrowing.id)}
+                        >
                           <XCircle className="size-4" />
                           {rejectPending ? "Memproses..." : "Tolak"}
                         </Button>
@@ -1869,7 +1968,7 @@ export function BorrowingPageClient({
                       <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-sm text-muted-foreground">
                         <p className="font-medium text-foreground">Pengembalian Alat</p>
                         <p className="mt-1">
-                        Pengembalian parsial: proses satu alat per submit. Status transaksi berubah otomatis menjadi kembali sebagian atau dikembalikan.
+                        Pengembalian parsial: pilih satu atau beberapa alat per submit. Status transaksi berubah otomatis menjadi kembali sebagian atau dikembalikan.
                         </p>
                       </div>
                       {returnState && (
@@ -1884,34 +1983,61 @@ export function BorrowingPageClient({
                       ) : (
                         <form action={returnAction} className="grid gap-3">
                           <input type="hidden" name="transactionId" value={selectedBorrowing.id} />
-                          <div className="grid gap-3 sm:grid-cols-[1.3fr_1fr]">
+                          <input type="hidden" name="returnItemsPayload" value={returnItemsPayload} />
+                          <div className="grid gap-2">
+                            <Label>Alat Dikembalikan (bisa multi pilih)</Label>
                             <div className="grid gap-2">
-                              <Label htmlFor="returnTransactionItemId">Alat Dikembalikan</Label>
-                              <Select name="transactionItemId" required>
-                                <SelectTrigger id="returnTransactionItemId" className="w-full">
-                                  <SelectValue placeholder="Pilih alat" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  {returnableToolItems.map((item) => (
-                                    <SelectItem key={item.id} value={item.id}>
-                                      {item.name}{item.assetCode ? ` - ${item.assetCode}` : ""}
-                                    </SelectItem>
-                                  ))}
-                                </SelectContent>
-                              </Select>
-                            </div>
-                            <div className="grid gap-2">
-                              <Label htmlFor="returnCondition">Kondisi Kembali</Label>
-                              <Select name="returnCondition" defaultValue="baik">
-                                <SelectTrigger id="returnCondition" className="w-full">
-                                  <SelectValue placeholder="Kondisi" />
-                                </SelectTrigger>
-                                <SelectContent>
-                                  <SelectItem value="baik">Baik</SelectItem>
-                                  <SelectItem value="maintenance">Perlu Maintenance</SelectItem>
-                                  <SelectItem value="damaged">Rusak</SelectItem>
-                                </SelectContent>
-                              </Select>
+                              {returnableToolItems.map((item) => {
+                                const checked = Boolean(returnSelectionMap[item.id])
+                                return (
+                                  <div
+                                    key={item.id}
+                                    className="grid gap-2 rounded-xl border border-border/60 bg-card px-3 py-2 sm:grid-cols-[1fr_220px]"
+                                  >
+                                    <label className="flex cursor-pointer items-start gap-2">
+                                      <Checkbox
+                                        checked={checked}
+                                        onCheckedChange={(value) => {
+                                          const isChecked = value === true
+                                          setReturnSelectionMap((prev) => {
+                                            const next = { ...prev }
+                                            if (!isChecked) {
+                                              delete next[item.id]
+                                            } else {
+                                              next[item.id] = next[item.id] ?? "baik"
+                                            }
+                                            return next
+                                          })
+                                        }}
+                                        className="mt-0.5"
+                                      />
+                                      <span className="text-sm text-foreground">
+                                        {item.name}
+                                        {item.assetCode ? ` - ${item.assetCode}` : ""}
+                                      </span>
+                                    </label>
+                                    <Select
+                                      value={returnSelectionMap[item.id] ?? "baik"}
+                                      onValueChange={(value) =>
+                                        setReturnSelectionMap((prev) => ({
+                                          ...prev,
+                                          [item.id]: value as "baik" | "maintenance" | "damaged",
+                                        }))
+                                      }
+                                      disabled={!checked}
+                                    >
+                                      <SelectTrigger className="w-full">
+                                        <SelectValue placeholder="Kondisi" />
+                                      </SelectTrigger>
+                                      <SelectContent>
+                                        <SelectItem value="baik">Baik</SelectItem>
+                                        <SelectItem value="maintenance">Perlu Maintenance</SelectItem>
+                                        <SelectItem value="damaged">Rusak</SelectItem>
+                                      </SelectContent>
+                                    </Select>
+                                  </div>
+                                )
+                              })}
                             </div>
                           </div>
                           <div className="grid gap-2">
@@ -1926,7 +2052,7 @@ export function BorrowingPageClient({
                             />
                           </div>
                           <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                            <Button type="submit" disabled={returnPending}>
+                            <Button type="submit" disabled={returnPending || selectedReturnItemIds.length === 0}>
                               {returnPending ? "Memproses..." : "Terima Kembali"}
                             </Button>
                           </div>
@@ -1954,6 +2080,55 @@ export function BorrowingPageClient({
           )}
         </DialogContent>
       </Dialog>
+
+      <form ref={quickApproveFormRef} action={approveBorrowingAction} className="hidden">
+        <input
+          type="hidden"
+          name="transactionId"
+          value={confirmDialog.source === "list" ? (confirmDialog.transactionId ?? "") : ""}
+        />
+      </form>
+      <form ref={quickRejectFormRef} action={rejectBorrowingAction} className="hidden">
+        <input
+          type="hidden"
+          name="transactionId"
+          value={confirmDialog.source === "list" ? (confirmDialog.transactionId ?? "") : ""}
+        />
+      </form>
+
+      <AlertDialog
+        open={confirmDialog.open}
+        onOpenChange={(open) => setConfirmDialog((prev) => ({ ...prev, open }))}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>
+              {confirmDialog.mode === "approve" ? "Konfirmasi Persetujuan" : "Konfirmasi Penolakan"}
+            </AlertDialogTitle>
+            <AlertDialogDescription>
+              {confirmDialog.mode === "approve"
+                ? "Yakin ingin menyetujui pengajuan ini?"
+                : "Yakin ingin menolak pengajuan ini?"}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Batal</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(event) => {
+                event.preventDefault()
+                submitConfirmedApproval()
+              }}
+              className={
+                confirmDialog.mode === "reject"
+                  ? "bg-destructive text-destructive-foreground hover:bg-destructive/90"
+                  : undefined
+              }
+            >
+              {confirmDialog.mode === "approve" ? "Ya, Setujui" : "Ya, Tolak"}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   )
 }

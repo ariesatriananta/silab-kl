@@ -323,9 +323,6 @@ export function ToolsPageClient({
 
       <Card className="border-border/50 bg-card shadow-sm">
         <CardContent className="p-4">
-          <div className="mb-3 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
-            Fokus halaman ini: cari unit alat, cek status/kondisi, lalu lakukan edit/QR cetak jika diperlukan.
-          </div>
           <form
             className="flex flex-col gap-3 sm:flex-row sm:items-center"
             onSubmit={(e) => {

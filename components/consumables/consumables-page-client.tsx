@@ -593,10 +593,25 @@ export function ConsumablesPageClient({
         onValueChange={(v) => setActiveTab(v as "stock" | "requests" | "movements")}
         className="flex flex-col gap-4"
       >
-        <TabsList className="grid w-full grid-cols-3 rounded-xl bg-muted/50 p-1 md:w-auto">
-          <TabsTrigger value="stock" className="rounded-lg px-2 text-xs sm:text-sm">Stok Aktif</TabsTrigger>
-          <TabsTrigger value="requests" className="rounded-lg px-2 text-xs sm:text-sm">Permintaan Bahan</TabsTrigger>
-          <TabsTrigger value="movements" className="rounded-lg px-2 text-xs sm:text-sm">Histori Stok</TabsTrigger>
+        <TabsList className="grid h-12 w-full grid-cols-3 items-stretch gap-1 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-1 md:w-auto">
+          <TabsTrigger
+            value="stock"
+            className="h-full w-full rounded-xl border border-transparent bg-transparent px-2 py-0 text-xs font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
+          >
+            Stok Aktif
+          </TabsTrigger>
+          <TabsTrigger
+            value="requests"
+            className="h-full w-full rounded-xl border border-transparent bg-transparent px-2 py-0 text-xs font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
+          >
+            Permintaan Bahan
+          </TabsTrigger>
+          <TabsTrigger
+            value="movements"
+            className="h-full w-full rounded-xl border border-transparent bg-transparent px-2 py-0 text-xs font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
+          >
+            Histori Stok
+          </TabsTrigger>
         </TabsList>
 
         <TabsContent value="stock" className="mt-0 flex flex-col gap-4">

@@ -163,40 +163,57 @@ async function getBorrowingData(
         ? or(eq(borrowingTransactions.requesterUserId, userId), eq(borrowingTransactions.createdByUserId, userId))
         : filters.scope === "waiting_me"
           ? role === "dosen" || role === "petugas_plp"
-            ? and(
-                inArray(borrowingTransactions.status, ["submitted", "pending_approval"]),
-                sql`${borrowingTransactions.approvalMatrixId} is not null`,
-                sql`not exists (
-                  select 1
-                  from borrowing_approvals ba_self
-                  where ba_self.transaction_id = ${borrowingTransactions.id}
-                    and ba_self.approver_user_id = ${userId}
-                )`,
-                role === "dosen"
-                  ? sql`(
-                      select count(*)
-                      from borrowing_approvals ba_ok
-                      where ba_ok.transaction_id = ${borrowingTransactions.id}
-                        and ba_ok.decision = 'approved'
-                    ) = 0`
-                  : sql`(
+            ? role === "dosen"
+              ? and(
+                  inArray(borrowingTransactions.status, ["submitted", "pending_approval"]),
+                  sql`${borrowingTransactions.approvalMatrixId} is not null`,
+                  sql`not exists (
+                    select 1
+                    from borrowing_approvals ba_self
+                    where ba_self.transaction_id = ${borrowingTransactions.id}
+                      and ba_self.approver_user_id = ${userId}
+                  )`,
+                  sql`(
+                    select count(*)
+                    from borrowing_approvals ba_ok
+                    where ba_ok.transaction_id = ${borrowingTransactions.id}
+                      and ba_ok.decision = 'approved'
+                  ) = 0`,
+                  sql`exists (
+                    select 1 from borrowing_approval_matrices bam
+                    where bam.id = ${borrowingTransactions.approvalMatrixId}
+                      and bam.step1_approver_user_id = ${userId}
+                  )`,
+                )
+              : or(
+                  and(
+                    inArray(borrowingTransactions.status, ["submitted", "pending_approval"]),
+                    sql`${borrowingTransactions.approvalMatrixId} is not null`,
+                    sql`not exists (
+                      select 1
+                      from borrowing_approvals ba_self
+                      where ba_self.transaction_id = ${borrowingTransactions.id}
+                        and ba_self.approver_user_id = ${userId}
+                    )`,
+                    sql`(
                       select count(*)
                       from borrowing_approvals ba_ok
                       where ba_ok.transaction_id = ${borrowingTransactions.id}
                         and ba_ok.decision = 'approved'
                     ) = 1`,
-                role === "dosen"
-                  ? sql`exists (
-                      select 1 from borrowing_approval_matrices bam
-                      where bam.id = ${borrowingTransactions.approvalMatrixId}
-                        and bam.step1_approver_user_id = ${userId}
-                    )`
-                  : sql`exists (
+                    sql`exists (
                       select 1 from borrowing_approval_matrices bam
                       where bam.id = ${borrowingTransactions.approvalMatrixId}
                         and bam.step2_approver_user_id = ${userId}
                     )`,
-              )
+                  ),
+                  and(
+                    eq(borrowingTransactions.status, "approved_waiting_handover"),
+                    accessibleLabIds && accessibleLabIds.length > 0
+                      ? inArray(borrowingTransactions.labId, accessibleLabIds)
+                      : sql`false`,
+                  ),
+                )
             : sql`false`
         : filters.scope === "my_labs"
           ? accessibleLabIds && accessibleLabIds.length > 0
@@ -847,8 +864,7 @@ export default async function BorrowingPage({
   ] as const).includes((statusParamRaw ?? "all") as BorrowingPageStatusFilter)
     ? ((statusParamRaw ?? "all") as BorrowingPageStatusFilter)
     : "all"
-  const defaultScope: BorrowingPageScopeFilter =
-    role === "petugas_plp" || role === "dosen" ? "waiting_me" : role === "mahasiswa" ? "mine" : "all"
+  const defaultScope: BorrowingPageScopeFilter = "all"
   const scopeCandidate = (scopeParamRaw ?? defaultScope) as BorrowingPageScopeFilter
   const scopeParam: BorrowingPageScopeFilter = ["all", "mine", "my_labs", "waiting_me"].includes(scopeCandidate)
     ? scopeCandidate

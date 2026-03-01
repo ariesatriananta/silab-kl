@@ -71,6 +71,13 @@
       "when": 1772323200000,
       "tag": "0009_user_based_approval_matrix",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1772409600000,
+      "tag": "0010_notification_read_state",
+      "breakpoints": true
     }
   ]
 }

@@ -65,11 +65,19 @@ export function HeaderNotificationMenu() {
     }
   }
 
+  const markAsRead = async () => {
+    try {
+      await fetch("/api/notifications/mark-read", { method: "POST", keepalive: true })
+    } catch {
+      // ignore network issues for non-blocking header notification
+    }
+  }
+
   useEffect(() => {
     void fetchSummary("initial")
     const timer = window.setInterval(() => {
       void fetchSummary("refresh")
-    }, 30_000)
+    }, 60_000)
     return () => window.clearInterval(timer)
   }, [])
 
@@ -92,7 +100,16 @@ export function HeaderNotificationMenu() {
   const otherItems = orderedItems.filter((item) => item.tone !== "danger" && item.tone !== "warning")
 
   return (
-    <DropdownMenu>
+    <DropdownMenu
+      onOpenChange={(open) => {
+        if (!open) return
+        setData((prev) => ({ ...prev, totalUnread: 0 }))
+        void (async () => {
+          await markAsRead()
+          await fetchSummary("refresh")
+        })()
+      }}
+    >
       <DropdownMenuTrigger asChild>
         <Button
           type="button"

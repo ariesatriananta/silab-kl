@@ -27,6 +27,19 @@ import { writeSecurityAuditLog } from "@/lib/security/audit"
 
 const BORROWING_APPROVAL_FLOW = [1, 2] as const
 
+type BorrowingTxLike = typeof db
+
+async function runBorrowingTx<T>(fn: (tx: BorrowingTxLike) => Promise<T>) {
+  try {
+    return await db.transaction(async (tx) => fn(tx as unknown as BorrowingTxLike))
+  } catch (error) {
+    if (error instanceof Error && error.message.includes("No transactions support in neon-http driver")) {
+      return await fn(db)
+    }
+    throw error
+  }
+}
+
 async function getActiveBorrowingMatrixForLab(labId: string) {
   const matrix = await db.query.borrowingApprovalMatrices.findFirst({
     where: and(eq(borrowingApprovalMatrices.labId, labId), eq(borrowingApprovalMatrices.isActive, true)),
@@ -100,12 +113,84 @@ const handoverActionSchema = z.object({
   note: z.string().max(500).optional(),
 })
 
-const returnToolActionSchema = z.object({
-  transactionId: z.string().uuid(),
+const returnItemConditionSchema = z.object({
   transactionItemId: z.string().uuid(),
   returnCondition: z.enum(["baik", "maintenance", "damaged"]),
-  note: z.string().max(500).optional(),
 })
+
+const returnToolActionSchema = z
+  .object({
+    transactionId: z.string().uuid(),
+    transactionItemId: z.string().uuid().optional(),
+    returnCondition: z.enum(["baik", "maintenance", "damaged"]).optional(),
+    returnItemsPayload: z.string().optional(),
+    note: z.string().max(500).optional(),
+  })
+  .superRefine((value, ctx) => {
+    const hasPayload = Boolean(value.returnItemsPayload?.trim())
+    const hasSingle = Boolean(value.transactionItemId && value.returnCondition)
+    if (!hasPayload && !hasSingle) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: "Pilih minimal satu alat untuk dikembalikan.",
+      })
+    }
+  })
+
+function mapReturnBorrowingIssueMessage(issue: z.ZodIssue) {
+  const field = issue.path[0]
+  const labels: Record<string, string> = {
+    transactionId: "Transaksi",
+    transactionItemId: "Item alat",
+    returnCondition: "Kondisi pengembalian",
+    returnItemsPayload: "Item pengembalian",
+    note: "Catatan pengembalian",
+  }
+  const label = typeof field === "string" ? labels[field] ?? field : "Form pengembalian"
+
+  if (issue.message && issue.message !== "Invalid input" && !issue.message.includes("Expected")) {
+    return issue.message
+  }
+
+  if (issue.code === z.ZodIssueCode.invalid_type) {
+    return `${label} tidak valid.`
+  }
+  return `${label} tidak valid.`
+}
+
+function mapCreateBorrowingIssueMessage(issue: z.ZodIssue) {
+  const field = issue.path[0]
+  const labels: Record<string, string> = {
+    labId: "Laboratorium",
+    requesterUserId: "Pemohon",
+    purpose: "Keperluan",
+    courseName: "Mata Kuliah",
+    materialTopic: "Materi",
+    semesterLabel: "Semester",
+    groupName: "Kelompok",
+    advisorLecturerName: "Dosen",
+    toolAssetId: "Alat",
+    consumableItemId: "Bahan Habis Pakai",
+    consumableQty: "Qty Bahan",
+    itemsPayload: "Item Pengajuan",
+  }
+  const label = typeof field === "string" ? labels[field] ?? field : "Form"
+
+  if (issue.message && issue.message !== "Invalid input") {
+    return issue.message
+  }
+
+  switch (issue.code) {
+    case z.ZodIssueCode.invalid_type:
+      return `${label} wajib diisi.`
+    case z.ZodIssueCode.too_small:
+      return `${label} belum memenuhi panjang minimal.`
+    case z.ZodIssueCode.invalid_string:
+      return `${label} tidak valid.`
+    default:
+      return `${label} tidak valid.`
+  }
+}
 
 export async function createBorrowingRequestAction(
   _prevState: CreateBorrowingActionResult | null,
@@ -126,13 +211,14 @@ export async function createBorrowingRequestAction(
     groupName: formData.get("groupName"),
     advisorLecturerName: formData.get("advisorLecturerName")?.toString() || undefined,
     itemsPayload: formData.get("itemsPayload")?.toString() || undefined,
-    toolAssetId: formData.get("toolAssetId"),
-    consumableItemId: formData.get("consumableItemId"),
+    toolAssetId: formData.get("toolAssetId")?.toString() || undefined,
+    consumableItemId: formData.get("consumableItemId")?.toString() || undefined,
     consumableQty: formData.get("consumableQty") || undefined,
   })
 
   if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? "Data pengajuan tidak valid." }
+    const issue = parsed.error.issues[0]
+    return { ok: false, message: issue ? mapCreateBorrowingIssueMessage(issue) : "Data pengajuan tidak valid." }
   }
 
   const role = session.user.role
@@ -251,7 +337,7 @@ export async function createBorrowingRequestAction(
   }
 
   try {
-    await db.transaction(async (tx) => {
+    await runBorrowingTx(async (tx) => {
       const insertedTx = await tx
         .insert(borrowingTransactions)
         .values({
@@ -304,7 +390,9 @@ export async function createBorrowingRequestAction(
       ok: false,
       message: isUniqueCodeError
         ? "Kode transaksi bentrok. Silakan kirim ulang."
-        : "Gagal menyimpan pengajuan peminjaman.",
+        : error instanceof Error && error.message
+          ? `Gagal menyimpan pengajuan peminjaman: ${error.message}`
+          : "Gagal menyimpan pengajuan peminjaman.",
     }
   }
 
@@ -460,7 +548,7 @@ export async function approveBorrowingWithFeedbackAction(
       : noteTrimmed
 
   try {
-    await db.transaction(async (tx) => {
+    await runBorrowingTx(async (tx) => {
       await tx.insert(borrowingApprovals).values({
         transactionId: txRow.id,
         approverUserId: session.user.id,
@@ -557,7 +645,7 @@ export async function rejectBorrowingWithFeedbackAction(
       : noteTrimmed
 
   try {
-    await db.transaction(async (tx) => {
+    await runBorrowingTx(async (tx) => {
       await tx.insert(borrowingApprovals).values({
         transactionId: txRow.id,
         approverUserId: session.user.id,
@@ -664,7 +752,7 @@ export async function handoverBorrowingAction(
   }
 
   try {
-    await db.transaction(async (tx) => {
+    await runBorrowingTx(async (tx) => {
       const approvalCountRows = await tx
         .select({ count: sql<number>`count(*)` })
         .from(borrowingApprovals)
@@ -845,13 +933,18 @@ export async function returnBorrowingToolAction(
   formData: FormData,
 ): Promise<BorrowingMutationResult> {
   const parsed = returnToolActionSchema.safeParse({
-    transactionId: formData.get("transactionId"),
-    transactionItemId: formData.get("transactionItemId"),
-    returnCondition: formData.get("returnCondition"),
+    transactionId: formData.get("transactionId")?.toString() || undefined,
+    transactionItemId: formData.get("transactionItemId")?.toString() || undefined,
+    returnCondition: formData.get("returnCondition")?.toString() || undefined,
+    returnItemsPayload: formData.get("returnItemsPayload")?.toString() || undefined,
     note: formData.get("note")?.toString() || undefined,
   })
   if (!parsed.success) {
-    return { ok: false, message: parsed.error.issues[0]?.message ?? "Data pengembalian tidak valid." }
+    const issue = parsed.error.issues[0]
+    return {
+      ok: false,
+      message: issue ? mapReturnBorrowingIssueMessage(issue) : "Data pengembalian tidak valid.",
+    }
   }
 
   const session = await getServerAuthSession()
@@ -876,8 +969,40 @@ export async function returnBorrowingToolAction(
     if (!assignment) return { ok: false, message: "Anda tidak memiliki akses ke lab ini." }
   }
 
+  let returnItems: Array<{ transactionItemId: string; returnCondition: "baik" | "maintenance" | "damaged" }> = []
+  if (parsed.data.returnItemsPayload?.trim()) {
+    try {
+      const raw = JSON.parse(parsed.data.returnItemsPayload) as unknown
+      const list = z.array(returnItemConditionSchema).min(1).parse(raw)
+      const seen = new Set<string>()
+      returnItems = list.filter((item) => {
+        if (seen.has(item.transactionItemId)) return false
+        seen.add(item.transactionItemId)
+        return true
+      })
+    } catch {
+      return { ok: false, message: "Data item pengembalian tidak valid." }
+    }
+  } else if (parsed.data.transactionItemId && parsed.data.returnCondition) {
+    returnItems = [
+      {
+        transactionItemId: parsed.data.transactionItemId,
+        returnCondition: parsed.data.returnCondition,
+      },
+    ]
+  }
+
+  if (returnItems.length === 0) {
+    return { ok: false, message: "Pilih minimal satu alat untuk dikembalikan." }
+  }
+
   try {
-    await db.transaction(async (tx) => {
+    await runBorrowingTx(async (tx) => {
+      const selectedItemIds = returnItems.map((item) => item.transactionItemId)
+      const returnConditionByItemId = new Map(
+        returnItems.map((item) => [item.transactionItemId, item.returnCondition] as const),
+      )
+
       const itemRows = await tx
         .select({
           id: borrowingTransactionItems.id,
@@ -886,34 +1011,33 @@ export async function returnBorrowingToolAction(
           toolAssetId: borrowingTransactionItems.toolAssetId,
         })
         .from(borrowingTransactionItems)
-        .where(
-          and(
-            eq(borrowingTransactionItems.id, parsed.data.transactionItemId),
-            eq(borrowingTransactionItems.transactionId, txRow.id),
-          ),
-        )
+        .where(and(inArray(borrowingTransactionItems.id, selectedItemIds), eq(borrowingTransactionItems.transactionId, txRow.id)))
 
-      const txItem = itemRows[0]
-      if (!txItem) throw new Error("Item transaksi tidak ditemukan.")
-      if (txItem.itemType !== "tool_asset" || !txItem.toolAssetId) {
+      if (itemRows.length !== selectedItemIds.length) {
+        throw new Error("Sebagian item pengembalian tidak ditemukan pada transaksi ini.")
+      }
+      if (itemRows.some((txItem) => txItem.itemType !== "tool_asset" || !txItem.toolAssetId)) {
         throw new Error("Hanya item alat yang dapat dikembalikan.")
       }
 
-      const existingReturn = await tx.query.borrowingReturnItems.findFirst({
-        where: eq(borrowingReturnItems.transactionItemId, txItem.id),
-        columns: { id: true },
-      })
-      if (existingReturn) {
-        throw new Error("Item alat ini sudah dikembalikan sebelumnya.")
+      const existingReturns = await tx
+        .select({ transactionItemId: borrowingReturnItems.transactionItemId })
+        .from(borrowingReturnItems)
+        .where(inArray(borrowingReturnItems.transactionItemId, selectedItemIds))
+      if (existingReturns.length > 0) {
+        throw new Error("Sebagian item alat sudah dikembalikan sebelumnya.")
       }
 
-      const toolState = await tx.query.toolAssets.findFirst({
-        where: eq(toolAssets.id, txItem.toolAssetId),
-        columns: { id: true, status: true },
-      })
-      if (!toolState) throw new Error("Asset alat tidak ditemukan.")
-      if (toolState.status !== "borrowed") {
-        throw new Error("Asset alat tidak dalam status dipinjam.")
+      const toolAssetIds = itemRows.map((item) => item.toolAssetId!).filter(Boolean)
+      const toolStates = await tx
+        .select({ id: toolAssets.id, status: toolAssets.status })
+        .from(toolAssets)
+        .where(inArray(toolAssets.id, toolAssetIds))
+      if (toolStates.length !== toolAssetIds.length) {
+        throw new Error("Sebagian asset alat tidak ditemukan.")
+      }
+      if (toolStates.some((toolState) => toolState.status !== "borrowed")) {
+        throw new Error("Sebagian asset alat tidak dalam status dipinjam.")
       }
 
       const [returnHeader] = await tx
@@ -928,29 +1052,41 @@ export async function returnBorrowingToolAction(
 
       if (!returnHeader) throw new Error("Gagal membuat header pengembalian.")
 
-      await tx.insert(borrowingReturnItems).values({
-        returnId: returnHeader.id,
-        transactionItemId: txItem.id,
-        toolAssetId: txItem.toolAssetId,
-        returnCondition: parsed.data.returnCondition,
-        note: parsed.data.note?.trim() || null,
-      })
+      await tx.insert(borrowingReturnItems).values(
+        itemRows.map((txItem) => {
+          const returnCondition = returnConditionByItemId.get(txItem.id)
+          if (!returnCondition) {
+            throw new Error("Kondisi pengembalian item tidak valid.")
+          }
+          return {
+            returnId: returnHeader.id,
+            transactionItemId: txItem.id,
+            toolAssetId: txItem.toolAssetId!,
+            returnCondition,
+            note: parsed.data.note?.trim() || null,
+          }
+        }),
+      )
 
-      const nextAssetStatus =
-        parsed.data.returnCondition === "baik"
-          ? "available"
-          : parsed.data.returnCondition === "maintenance"
-            ? "maintenance"
-            : "damaged"
+      for (const txItem of itemRows) {
+        const returnCondition = returnConditionByItemId.get(txItem.id)
+        if (!returnCondition) continue
+        const nextAssetStatus =
+          returnCondition === "baik"
+            ? "available"
+            : returnCondition === "maintenance"
+              ? "maintenance"
+              : "damaged"
 
-      await tx
-        .update(toolAssets)
-        .set({
-          status: nextAssetStatus,
-          condition: parsed.data.returnCondition,
-          updatedAt: new Date(),
-        })
-        .where(eq(toolAssets.id, txItem.toolAssetId))
+        await tx
+          .update(toolAssets)
+          .set({
+            status: nextAssetStatus,
+            condition: returnCondition,
+            updatedAt: new Date(),
+          })
+          .where(eq(toolAssets.id, txItem.toolAssetId!))
+      }
 
       const [toolCountRow] = await tx
         .select({ count: sql<number>`count(*)` })
