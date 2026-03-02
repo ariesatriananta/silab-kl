@@ -6,9 +6,11 @@ import { useActionState, useDeferredValue, useEffect, useMemo, useRef, useState,
 import {
   AlertTriangle,
   CheckCircle2,
+  ChevronDown,
   Clock,
   Eye,
   FlaskConical,
+  Lightbulb,
   Minus,
   Package,
   PackagePlus,
@@ -20,11 +22,9 @@ import {
 } from "lucide-react"
 
 import {
-  approveBorrowingAction,
   approveBorrowingWithFeedbackAction,
   createBorrowingRequestAction,
   handoverBorrowingAction,
-  rejectBorrowingAction,
   rejectBorrowingWithFeedbackAction,
   returnBorrowingToolAction,
   type BorrowingMutationResult,
@@ -326,8 +326,6 @@ export function BorrowingPageClient({
   createOptions: {
     labs: BorrowingCreateLabOption[]
     requesters: BorrowingCreateRequesterOption[]
-    tools: BorrowingCreateToolOption[]
-    consumables: BorrowingCreateConsumableOption[]
     approvalRoutes: BorrowingCreateApprovalRouteOption[]
   }
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
@@ -347,14 +345,23 @@ export function BorrowingPageClient({
   const [pagingPending, startPagingTransition] = useTransition()
   const [statusFilter, setStatusFilter] = useState<string>(initialListFilters.status)
   const [scopeFilter, setScopeFilter] = useState<"all" | "mine" | "my_labs" | "waiting_me">(initialListFilters.scope)
+  const [studentHintOpen, setStudentHintOpen] = useState(false)
   const [selectedBorrowingId, setSelectedBorrowingId] = useState<string | null>(null)
+  const [detailMap, setDetailMap] = useState<Record<string, BorrowingDetail>>(details)
+  const [detailLoading, setDetailLoading] = useState(false)
+  const [detailError, setDetailError] = useState<string | null>(null)
   const [createOpen, setCreateOpen] = useState(false)
   const [selectedLabId, setSelectedLabId] = useState(createOptions.labs[0]?.id ?? "")
+  const [selectedAdvisorApproverUserId, setSelectedAdvisorApproverUserId] = useState("")
   const [selectedRequesterId, setSelectedRequesterId] = useState(
     role === "mahasiswa" ? currentUserId : createOptions.requesters[0]?.id ?? "",
   )
   const [selectedToolIds, setSelectedToolIds] = useState<string[]>([])
   const [consumableQtyMap, setConsumableQtyMap] = useState<Record<string, number>>({})
+  const [labTools, setLabTools] = useState<BorrowingCreateToolOption[]>([])
+  const [labConsumables, setLabConsumables] = useState<BorrowingCreateConsumableOption[]>([])
+  const [createInventoryLoading, setCreateInventoryLoading] = useState(false)
+  const [createInventoryError, setCreateInventoryError] = useState<string | null>(null)
   const [toolQuery, setToolQuery] = useState("")
   const [consumableQuery, setConsumableQuery] = useState("")
   const [toolVisibleCount, setToolVisibleCount] = useState(30)
@@ -373,16 +380,12 @@ export function BorrowingPageClient({
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
     mode: "approve" | "reject"
-    source: "list" | "detail"
     transactionId: string | null
   }>({
     open: false,
     mode: "approve",
-    source: "list",
     transactionId: null,
   })
-  const quickApproveFormRef = useRef<HTMLFormElement>(null)
-  const quickRejectFormRef = useRef<HTMLFormElement>(null)
   const detailApproveFormRef = useRef<HTMLFormElement>(null)
   const detailRejectFormRef = useRef<HTMLFormElement>(null)
 
@@ -421,6 +424,10 @@ export function BorrowingPageClient({
     })
   }, [initialListFilters.status, initialListFilters.scope])
 
+  useEffect(() => {
+    setDetailMap(details)
+  }, [details])
+
   const filtered = rows
   const summary = {
     pending: rows.filter((b) => b.status === "pending" || b.status === "approved_waiting_handover").length,
@@ -435,20 +442,20 @@ export function BorrowingPageClient({
     overdue: rows.filter((b) => b.status === "overdue").length,
   }
 
-  const selectedBorrowing = selectedBorrowingId ? details[selectedBorrowingId] : null
+  const selectedBorrowing = selectedBorrowingId ? detailMap[selectedBorrowingId] : null
 
   const availableToolsForLab = useMemo(
-    () => createOptions.tools.filter((item) => item.labId === selectedLabId),
-    [createOptions.tools, selectedLabId],
+    () => labTools.filter((item) => item.labId === selectedLabId),
+    [labTools, selectedLabId],
   )
   const availableConsumablesForLab = useMemo(
-    () => createOptions.consumables.filter((item) => item.labId === selectedLabId),
-    [createOptions.consumables, selectedLabId],
+    () => labConsumables.filter((item) => item.labId === selectedLabId),
+    [labConsumables, selectedLabId],
   )
-  const toolById = useMemo(() => new Map(createOptions.tools.map((t) => [t.id, t])), [createOptions.tools])
+  const toolById = useMemo(() => new Map(labTools.map((t) => [t.id, t])), [labTools])
   const consumableById = useMemo(
-    () => new Map(createOptions.consumables.map((c) => [c.id, c])),
-    [createOptions.consumables],
+    () => new Map(labConsumables.map((c) => [c.id, c])),
+    [labConsumables],
   )
   const selectedTools = useMemo(
     () => selectedToolIds.map((id) => toolById.get(id)).filter(Boolean) as BorrowingCreateToolOption[],
@@ -474,8 +481,17 @@ export function BorrowingPageClient({
     () => createOptions.approvalRoutes.find((route) => route.labId === selectedLabId) ?? null,
     [createOptions.approvalRoutes, selectedLabId],
   )
-  const autoAdvisorLecturerName = selectedApprovalRoute?.dosenApprovers[0]?.name ?? ""
-  const isApprovalRouteReady = selectedApprovalRoute?.isReady ?? false
+  const selectedAdvisorApprover = useMemo(
+    () =>
+      selectedApprovalRoute?.dosenApprovers.find((item) => item.id === selectedAdvisorApproverUserId) ?? null,
+    [selectedApprovalRoute, selectedAdvisorApproverUserId],
+  )
+  const isApprovalRouteReady = Boolean(
+    selectedApprovalRoute?.matrixActive &&
+      selectedApprovalRoute?.matrixValid &&
+      selectedApprovalRoute?.plpApprovers.length &&
+      selectedAdvisorApprover,
+  )
   const toolSearchResults = useMemo(() => {
     const q = deferredToolQuery.trim().toLowerCase()
     return availableToolsForLab
@@ -536,13 +552,20 @@ export function BorrowingPageClient({
         pendingReturnTools: returnableToolItems.length,
       })
     : null
+  const canCurrentUserApproveSelected = Boolean(
+    selectedBorrowing &&
+      selectedBorrowing.status === "pending" &&
+      (role === "admin" ||
+        (role === "dosen" && selectedBorrowing.pendingApprovalTriage === "step1_ready") ||
+        (role === "petugas_plp" && selectedBorrowing.pendingApprovalTriage === "step2_ready")),
+  )
 
   useEffect(() => {
     if (!selectedBorrowingId) {
       setReturnSelectionMap({})
       return
     }
-    const borrowing = details[selectedBorrowingId]
+    const borrowing = detailMap[selectedBorrowingId]
     if (!borrowing) {
       setReturnSelectionMap({})
       return
@@ -557,10 +580,10 @@ export function BorrowingPageClient({
       }
       return next
     })
-  }, [details, selectedBorrowingId])
+  }, [detailMap, selectedBorrowingId])
   const detailHasAvailableActions = !!(
     selectedBorrowing &&
-    ((canApprove && selectedBorrowing.status === "pending") ||
+    ((canCurrentUserApproveSelected) ||
       (canHandover && selectedBorrowing.status === "approved_waiting_handover") ||
       (canHandover &&
         (selectedBorrowing.status === "active" ||
@@ -598,13 +621,30 @@ export function BorrowingPageClient({
 
   const handleLabChange = (labId: string) => {
     setSelectedLabId(labId)
+    const route = createOptions.approvalRoutes.find((item) => item.labId === labId)
+    setSelectedAdvisorApproverUserId(route?.dosenApprovers[0]?.id ?? "")
     setSelectedToolIds([])
     setConsumableQtyMap({})
+    setLabTools([])
+    setLabConsumables([])
+    setCreateInventoryError(null)
     setToolQuery("")
     setConsumableQuery("")
     setToolVisibleCount(30)
     setConsumableVisibleCount(30)
   }
+
+  useEffect(() => {
+    const route = selectedApprovalRoute
+    if (!route) {
+      setSelectedAdvisorApproverUserId("")
+      return
+    }
+    const stillValid = route.dosenApprovers.some((item) => item.id === selectedAdvisorApproverUserId)
+    if (!stillValid) {
+      setSelectedAdvisorApproverUserId(route.dosenApprovers[0]?.id ?? "")
+    }
+  }, [selectedApprovalRoute, selectedAdvisorApproverUserId])
 
   const setConsumableQty = (consumableId: string, qty: number) => {
     setConsumableQtyMap((prev) => ({
@@ -645,19 +685,13 @@ export function BorrowingPageClient({
     })
   }
 
-  const openApprovalConfirm = (mode: "approve" | "reject", source: "list" | "detail", transactionId: string) => {
-    setConfirmDialog({ open: true, mode, source, transactionId })
+  const openApprovalConfirm = (mode: "approve" | "reject", transactionId: string) => {
+    setConfirmDialog({ open: true, mode, transactionId })
   }
 
   const submitConfirmedApproval = () => {
     const form =
-      confirmDialog.source === "list"
-        ? confirmDialog.mode === "approve"
-          ? quickApproveFormRef.current
-          : quickRejectFormRef.current
-        : confirmDialog.mode === "approve"
-          ? detailApproveFormRef.current
-          : detailRejectFormRef.current
+      confirmDialog.mode === "approve" ? detailApproveFormRef.current : detailRejectFormRef.current
 
     if (!form) {
       setConfirmDialog((prev) => ({ ...prev, open: false }))
@@ -708,25 +742,111 @@ export function BorrowingPageClient({
   }, [createState])
 
   useEffect(() => {
+    if (!createOpen || !selectedLabId) return
+    const controller = new AbortController()
+    setCreateInventoryLoading(true)
+    setCreateInventoryError(null)
+
+    fetch(`/api/borrowing/create-inventory?labId=${encodeURIComponent(selectedLabId)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        const payload = (await res.json().catch(() => ({}))) as {
+          tools?: BorrowingCreateToolOption[]
+          consumables?: BorrowingCreateConsumableOption[]
+          message?: string
+        }
+        if (!res.ok) {
+          throw new Error(payload.message || "Gagal memuat data alat dan bahan.")
+        }
+        return {
+          tools: payload.tools ?? [],
+          consumables: payload.consumables ?? [],
+        }
+      })
+      .then((payload) => {
+        setLabTools(payload.tools)
+        setLabConsumables(payload.consumables)
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setLabTools([])
+        setLabConsumables([])
+        setCreateInventoryError(error instanceof Error ? error.message : "Gagal memuat data alat dan bahan.")
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setCreateInventoryLoading(false)
+        }
+      })
+
+    return () => controller.abort()
+  }, [createOpen, selectedLabId])
+
+  useEffect(() => {
     if (!prefill?.openCreate) return
     queueMicrotask(() => {
       setCreateOpen(true)
       if (prefill.labId && createOptions.labs.some((l) => l.id === prefill.labId)) {
         setSelectedLabId(prefill.labId)
       }
-      if (prefill.toolModelCode) {
-        const firstTool = createOptions.tools.find(
-          (t) =>
-            t.modelCode === prefill.toolModelCode &&
-            (!prefill.labId || t.labId === prefill.labId),
-        )
-        if (firstTool) {
-          if (!prefill.labId) setSelectedLabId(firstTool.labId)
-          setSelectedToolIds([firstTool.id])
-        }
-      }
     })
-  }, [createOptions.labs, createOptions.tools, prefill])
+  }, [createOptions.labs, prefill])
+
+  useEffect(() => {
+    if (!prefill?.openCreate || !prefill.toolModelCode || !createOpen) return
+    if (createInventoryLoading || labTools.length === 0 || selectedToolIds.length > 0) return
+    const firstTool = labTools.find(
+      (t) =>
+        t.modelCode === prefill.toolModelCode &&
+        (!prefill.labId || t.labId === prefill.labId),
+    )
+    if (firstTool) {
+      setSelectedToolIds([firstTool.id])
+    }
+  }, [createInventoryLoading, createOpen, labTools, prefill, selectedToolIds.length])
+
+  useEffect(() => {
+    if (!selectedBorrowingId) {
+      setDetailLoading(false)
+      setDetailError(null)
+      return
+    }
+    if (detailMap[selectedBorrowingId]) {
+      setDetailLoading(false)
+      setDetailError(null)
+      return
+    }
+    const controller = new AbortController()
+    setDetailLoading(true)
+    setDetailError(null)
+    fetch(`/api/borrowing/detail?transactionId=${encodeURIComponent(selectedBorrowingId)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        const payload = (await res.json().catch(() => ({}))) as {
+          detail?: BorrowingDetail
+          message?: string
+        }
+        if (!res.ok || !payload.detail) {
+          throw new Error(payload.message || "Gagal memuat detail peminjaman.")
+        }
+        setDetailMap((prev) => ({ ...prev, [selectedBorrowingId]: payload.detail! }))
+      })
+      .catch((error) => {
+        if (!controller.signal.aborted) {
+          setDetailError(error instanceof Error ? error.message : "Gagal memuat detail peminjaman.")
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) {
+          setDetailLoading(false)
+        }
+      })
+    return () => controller.abort()
+  }, [detailMap, selectedBorrowingId])
 
   return (
     <div className="min-w-0 overflow-x-hidden flex flex-col gap-6 p-4 lg:p-6">
@@ -780,6 +900,12 @@ export function BorrowingPageClient({
                     ))}
                   </SelectContent>
                 </Select>
+                {createInventoryLoading && (
+                  <p className="text-xs text-muted-foreground">Memuat katalog alat dan bahan...</p>
+                )}
+                {createInventoryError && (
+                  <p className="text-xs text-destructive">{createInventoryError}</p>
+                )}
               </div>
               <div className="grid gap-3 lg:grid-cols-3">
                 <div className="grid gap-2">
@@ -834,14 +960,25 @@ export function BorrowingPageClient({
                   />
                 </div>
                 <div className="grid gap-2">
-                  <Label htmlFor="advisorLecturerName">Dosen</Label>
-                  <Input
-                    id="advisorLecturerName"
-                    name="advisorLecturerName"
-                    value={autoAdvisorLecturerName}
-                    readOnly
-                    placeholder="Belum ada Approver-1 pada matrix lab"
-                  />
+                  <Label htmlFor="advisorApproverUserId">Dosen</Label>
+                  <Select value={selectedAdvisorApproverUserId} onValueChange={setSelectedAdvisorApproverUserId}>
+                    <SelectTrigger id="advisorApproverUserId" className="w-full">
+                      <SelectValue placeholder="Pilih dosen (sesuai lab)" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {(selectedApprovalRoute?.dosenApprovers ?? []).map((lecturer) => (
+                        <SelectItem key={lecturer.id} value={lecturer.id}>
+                          {lecturer.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                  {selectedApprovalRoute && selectedApprovalRoute.dosenApprovers.length === 0 && (
+                    <p className="text-xs text-warning-foreground">Belum ada dosen yang ter-assign pada lab ini.</p>
+                  )}
+                  {selectedApprovalRoute && selectedApprovalRoute.dosenApprovers.length > 0 && !selectedAdvisorApproverUserId && (
+                    <p className="text-xs text-warning-foreground">Pilih dosen untuk menentukan approver tahap 1.</p>
+                  )}
                 </div>
               </div>
 
@@ -899,14 +1036,14 @@ export function BorrowingPageClient({
                   </div>
                 </div>
 
-                <div className="grid gap-3 rounded-xl border border-border/60 bg-background p-4">
-                  <div className="flex items-center justify-between">
+                <div className="flex min-h-[264px] flex-col gap-3 rounded-xl border border-border/60 bg-background p-4">
+                  <div className="flex shrink-0 items-center justify-between">
                     <Label className="text-sm font-medium">Alat Terpilih</Label>
                     <Badge variant="outline" className="rounded-full">
                       {selectedTools.length} item
                     </Badge>
                   </div>
-                  <div className="max-h-52 space-y-2 overflow-auto rounded-lg border border-border/70 bg-muted/10 p-2">
+                  <div className="max-h-52 min-h-[196px] flex-1 space-y-2 overflow-auto rounded-lg border border-border/70 bg-muted/10 p-2">
                     {selectedTools.length === 0 && (
                       <p className="px-2 py-3 text-sm text-muted-foreground">Belum ada alat dipilih.</p>
                     )}
@@ -979,14 +1116,14 @@ export function BorrowingPageClient({
                   </div>
                 </div>
 
-                <div className="grid gap-3 rounded-xl border border-border/60 bg-background p-4">
-                  <div className="flex items-center justify-between">
+                <div className="flex min-h-[280px] flex-col gap-3 rounded-xl border border-border/60 bg-background p-4">
+                  <div className="flex shrink-0 items-center justify-between">
                     <Label className="text-sm font-medium">Bahan Terpilih</Label>
                     <Badge variant="outline" className="rounded-full">
                       {selectedConsumables.length} item
                     </Badge>
                   </div>
-                  <div className="max-h-56 space-y-2 overflow-auto rounded-lg border border-border/70 bg-muted/10 p-2">
+                  <div className="max-h-56 min-h-[212px] flex-1 space-y-2 overflow-auto rounded-lg border border-border/70 bg-muted/10 p-2">
                     {selectedConsumables.length === 0 && (
                       <p className="px-2 py-3 text-sm text-muted-foreground">Belum ada bahan dipilih.</p>
                     )}
@@ -1072,16 +1209,14 @@ export function BorrowingPageClient({
                     <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Tahap 1</p>
                       <p className="text-sm font-medium text-foreground">Dosen</p>
-                      {selectedApprovalRoute?.dosenApprovers.length ? (
+                      {selectedAdvisorApprover ? (
                         <p className="text-xs text-muted-foreground">
-                          {selectedApprovalRoute.dosenApprovers
-                            .map((item) =>
-                              item.identifier ? `${item.name} (${item.identifier})` : item.name,
-                            )
-                            .join(", ")}
+                          {selectedAdvisorApprover.identifier
+                            ? `${selectedAdvisorApprover.name} (${selectedAdvisorApprover.identifier})`
+                            : selectedAdvisorApprover.name}
                         </p>
                       ) : (
-                        <p className="text-xs text-muted-foreground">Belum ada dosen ter-assign.</p>
+                        <p className="text-xs text-muted-foreground">Pilih dosen terlebih dahulu.</p>
                       )}
                     </div>
                     <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
@@ -1102,8 +1237,8 @@ export function BorrowingPageClient({
                   </div>
                   {!isApprovalRouteReady && (
                     <p className="mt-2 text-xs text-warning-foreground">
-                      Matrix approval lab belum siap. Admin harus aktifkan matrix urutan Dosen ke Petugas PLP dan assign
-                      user pada lab ini.
+                      Pengajuan belum siap. Pastikan dosen tahap 1 dipilih dan matrix lab memiliki approver tahap 2
+                      Petugas PLP yang aktif.
                     </p>
                   )}
                 </div>
@@ -1116,6 +1251,7 @@ export function BorrowingPageClient({
               )}
 
               <input type="hidden" name="itemsPayload" value={itemsPayload} />
+              <input type="hidden" name="advisorApproverUserId" value={selectedAdvisorApproverUserId} />
 
               <div className="rounded-lg border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
                 Tip: fokus isi data akademik dulu, lalu pilih alat/bahan. Setelah submit, proses dilanjutkan di detail transaksi.
@@ -1125,7 +1261,7 @@ export function BorrowingPageClient({
                 <Button type="button" variant="outline" onClick={() => setCreateOpen(false)} disabled={createPending}>
                   Batal
                 </Button>
-                <Button type="submit" disabled={createPending || !isApprovalRouteReady}>
+                <Button type="submit" disabled={createPending || !isApprovalRouteReady || createInventoryLoading}>
                   {createPending ? "Menyimpan..." : "Kirim Pengajuan"}
                 </Button>
               </div>
@@ -1182,6 +1318,66 @@ export function BorrowingPageClient({
         </Card>
       )}
 
+      <Card className="overflow-hidden border-primary/20 bg-[linear-gradient(180deg,hsl(var(--primary)/0.08),hsl(var(--card))_42%)] shadow-sm">
+          <CardHeader className="pb-3">
+            <button
+              type="button"
+              onClick={() => setStudentHintOpen((prev) => !prev)}
+              className="flex w-full items-center justify-between rounded-xl border border-primary/20 bg-card/90 px-4 py-3 text-left transition-colors hover:bg-primary/5"
+              aria-expanded={studentHintOpen}
+              aria-label="Toggle Petunjuk Umum"
+            >
+              <div className="flex items-center gap-3">
+                <span className="inline-flex size-9 items-center justify-center rounded-lg border border-primary/25 bg-primary/10 text-primary">
+                  <Lightbulb className="size-4" />
+                </span>
+                <div>
+                  <CardTitle className="text-base font-semibold text-card-foreground">Petunjuk Umum</CardTitle>
+                  <p className="text-xs text-muted-foreground">
+                    Panduan singkat untuk membaca status dan memantau pengajuan peminjaman.
+                  </p>
+                </div>
+              </div>
+              <ChevronDown className={`size-4 text-muted-foreground transition-transform ${studentHintOpen ? "rotate-180" : ""}`} />
+            </button>
+          </CardHeader>
+          <div
+            className={`overflow-hidden transition-[max-height,opacity] duration-300 ease-out ${
+              studentHintOpen ? "max-h-[760px] opacity-100" : "max-h-0 opacity-0"
+            }`}
+          >
+            <CardContent className="grid gap-3 px-5 pb-5 pt-0 lg:grid-cols-3">
+              <div className="rounded-xl border border-border/60 bg-card/85 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Arti Status Pengajuan</p>
+                <div className="mt-2 space-y-1.5 text-sm text-foreground">
+                  <p><span className="font-medium">Menunggu</span>: sedang diproses approval petugas.</p>
+                  <p><span className="font-medium">Menunggu Serah Terima</span>: approval selesai, tunggu serah terima alat.</p>
+                  <p><span className="font-medium">Aktif</span>: alat sudah dipinjam dan belum dikembalikan.</p>
+                  <p><span className="font-medium">Dikembalikan</span>: transaksi selesai.</p>
+                </div>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-card/85 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Tips Penggunaan Filter</p>
+                <p className="mt-2 text-sm text-muted-foreground">
+                  Gunakan filter status untuk memantau progres pengajuan Anda. Buka detail transaksi untuk melihat item, riwayat approval, dan jadwal pengembalian.
+                </p>
+                <p className="mt-2 text-xs text-muted-foreground">
+                  Di layar HP, geser tabel ke samping untuk melihat semua kolom.
+                </p>
+              </div>
+              <div className="rounded-xl border border-border/60 bg-card/85 p-4">
+                <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Pengisian Pengajuan Peminjaman</p>
+                <div className="mt-2 space-y-1.5 text-sm text-muted-foreground">
+                  <p>1. Pilih <span className="font-medium text-foreground">Laboratorium</span> yang sesuai kebutuhan praktikum.</p>
+                  <p>2. Isi data akademik utama: <span className="font-medium text-foreground">Keperluan, Mata Kuliah, Materi, Semester, dan Kelompok</span>.</p>
+                  <p>3. Pilih alat/bahan secukupnya, lalu cek <span className="font-medium text-foreground">Rute Approval</span> sebelum kirim.</p>
+                  <p>4. Gunakan detail transaksi untuk memantau approval, serah terima, dan pengembalian.</p>
+                </div>
+              </div>
+            </CardContent>
+          </div>
+        </Card>
+
       <Card className="border-border/50 bg-card shadow-sm">
         <CardHeader className="pb-3">
           <CardTitle className="text-base font-semibold text-card-foreground">
@@ -1189,14 +1385,6 @@ export function BorrowingPageClient({
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          {isMahasiswa ? (
-            <div className="rounded-xl border border-border/50 bg-muted/20 px-4 py-3 text-sm">
-              <p className="font-medium text-foreground">Fokus mahasiswa</p>
-              <p className="mt-1 text-muted-foreground">
-                Pantau status pengajuan, lihat jadwal pengembalian, lalu cek detail transaksi jika perlu.
-              </p>
-            </div>
-          ) : null}
           <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,18rem)_minmax(0,18rem)_1fr] xl:items-center">
             <Select
               value={statusFilter}
@@ -1205,7 +1393,7 @@ export function BorrowingPageClient({
                 applyListFilters({ status: v, page: 1 })
               }}
             >
-              <SelectTrigger className={isMahasiswa ? "w-full sm:w-64 bg-card" : "w-56 bg-card"}>
+              <SelectTrigger className="w-full bg-card">
                 <SelectValue placeholder="Filter Status" />
               </SelectTrigger>
               <SelectContent>
@@ -1246,35 +1434,6 @@ export function BorrowingPageClient({
           </div>
         </CardContent>
       </Card>
-
-      {isMahasiswa && (
-        <Card className="border-border/50 bg-card shadow-sm">
-          <CardContent className="grid gap-3 p-4 sm:grid-cols-2">
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Arti Status Pengajuan
-              </p>
-              <div className="mt-2 space-y-1 text-sm text-foreground">
-                <p><span className="font-medium">Menunggu</span>: sedang diproses approval petugas.</p>
-                <p><span className="font-medium">Menunggu Serah Terima</span>: approval selesai, tunggu serah terima alat.</p>
-                <p><span className="font-medium">Aktif</span>: alat sudah dipinjam dan belum dikembalikan.</p>
-                <p><span className="font-medium">Dikembalikan</span>: transaksi selesai.</p>
-              </div>
-            </div>
-            <div>
-              <p className="text-xs font-medium uppercase tracking-wide text-muted-foreground">
-                Tips Penggunaan
-              </p>
-              <p className="mt-2 text-sm text-muted-foreground">
-                Gunakan filter status untuk memantau progres pengajuan Anda. Buka detail transaksi untuk melihat item, riwayat approval, dan jadwal pengembalian.
-              </p>
-              <p className="mt-2 text-xs text-muted-foreground">
-                Di layar HP, geser tabel ke samping untuk melihat semua kolom.
-              </p>
-            </div>
-          </CardContent>
-        </Card>
-      )}
 
       <Card className="border-border/50 bg-card shadow-sm">
         <CardHeader className="pb-3">
@@ -1343,7 +1502,6 @@ export function BorrowingPageClient({
                 )}
                 {filtered.map((borrow) => {
                   const status = statusConfig[borrow.status]
-                  const showApprovalActions = canApprove && role !== "admin" && borrow.status === "pending"
                   return (
                     <TableRow key={borrow.id} className="hover:bg-muted/30">
                       <TableCell className="font-mono text-xs text-muted-foreground">{borrow.code}</TableCell>
@@ -1402,30 +1560,6 @@ export function BorrowingPageClient({
                               <Printer className="size-4" />
                             </Link>
                           </Button>
-                          {showApprovalActions && (
-                            <>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 text-success-foreground hover:text-success-foreground"
-                                aria-label="Setujui"
-                                onClick={() => openApprovalConfirm("approve", "list", borrow.id)}
-                              >
-                                <CheckCircle2 className="size-4" />
-                              </Button>
-                              <Button
-                                type="button"
-                                variant="ghost"
-                                size="icon"
-                                className="size-8 text-destructive hover:text-destructive"
-                                aria-label="Tolak"
-                                onClick={() => openApprovalConfirm("reject", "list", borrow.id)}
-                              >
-                                <XCircle className="size-4" />
-                              </Button>
-                            </>
-                          )}
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1467,13 +1601,23 @@ export function BorrowingPageClient({
         </CardContent>
       </Card>
 
-      <Dialog open={!!selectedBorrowing} onOpenChange={() => setSelectedBorrowingId(null)}>
+      <Dialog open={!!selectedBorrowingId} onOpenChange={() => setSelectedBorrowingId(null)}>
         <DialogContent className="max-w-[95vw] md:max-w-[50vw] max-h-[90vh] overflow-y-auto">
           <DialogHeader>
             <DialogTitle>Detail Peminjaman {selectedBorrowing?.code}</DialogTitle>
             <DialogDescription>Informasi transaksi peminjaman dari database.</DialogDescription>
           </DialogHeader>
-          {selectedBorrowing && (
+          {detailLoading && (
+            <div className="rounded-xl border border-border/60 bg-muted/20 px-3 py-6 text-sm text-muted-foreground">
+              Memuat detail transaksi...
+            </div>
+          )}
+          {!detailLoading && detailError && (
+            <div className="rounded-xl border border-destructive/20 bg-destructive/5 px-3 py-3 text-sm text-destructive">
+              {detailError}
+            </div>
+          )}
+          {!detailLoading && !detailError && selectedBorrowing && (
             <div className="flex flex-col gap-4">
               <div className="flex justify-end">
                 <Button variant="outline" size="sm" asChild>
@@ -1773,7 +1917,7 @@ export function BorrowingPageClient({
                     </p>
                   </div>
 
-                  {canApprove && selectedBorrowing.status === "pending" && (
+                  {canCurrentUserApproveSelected && (
                 <>
                   <div className="flex flex-col gap-3">
                     <p className="text-sm text-muted-foreground">
@@ -1832,7 +1976,7 @@ export function BorrowingPageClient({
                           type="button"
                           className="w-full"
                           disabled={approvePending}
-                          onClick={() => openApprovalConfirm("approve", "detail", selectedBorrowing.id)}
+                          onClick={() => openApprovalConfirm("approve", selectedBorrowing.id)}
                         >
                           <CheckCircle2 className="size-4" />
                           {approvePending ? "Memproses..." : "Setujui"}
@@ -1859,7 +2003,7 @@ export function BorrowingPageClient({
                           variant="destructive"
                           className="w-full"
                           disabled={rejectPending}
-                          onClick={() => openApprovalConfirm("reject", "detail", selectedBorrowing.id)}
+                          onClick={() => openApprovalConfirm("reject", selectedBorrowing.id)}
                         >
                           <XCircle className="size-4" />
                           {rejectPending ? "Memproses..." : "Tolak"}
@@ -1868,6 +2012,12 @@ export function BorrowingPageClient({
                     </div>
                   </div>
                 </>
+              )}
+
+              {!canCurrentUserApproveSelected && canApprove && selectedBorrowing.status === "pending" && (
+                <div className="rounded-xl border border-border/60 bg-card px-3 py-3 text-sm text-muted-foreground">
+                  Approval belum pada giliran role Anda.
+                </div>
               )}
 
               {canHandover && selectedBorrowing.status === "approved_waiting_handover" && (
@@ -2016,7 +2166,7 @@ export function BorrowingPageClient({
                   </>
                 )}
                   {!(
-                    (canApprove && selectedBorrowing.status === "pending") ||
+                    (canCurrentUserApproveSelected) ||
                     (canHandover && selectedBorrowing.status === "approved_waiting_handover") ||
                     (canHandover &&
                       (selectedBorrowing.status === "active" ||
@@ -2034,21 +2184,6 @@ export function BorrowingPageClient({
           )}
         </DialogContent>
       </Dialog>
-
-      <form ref={quickApproveFormRef} action={approveBorrowingAction} className="hidden">
-        <input
-          type="hidden"
-          name="transactionId"
-          value={confirmDialog.source === "list" ? (confirmDialog.transactionId ?? "") : ""}
-        />
-      </form>
-      <form ref={quickRejectFormRef} action={rejectBorrowingAction} className="hidden">
-        <input
-          type="hidden"
-          name="transactionId"
-          value={confirmDialog.source === "list" ? (confirmDialog.transactionId ?? "") : ""}
-        />
-      </form>
 
       <AlertDialog
         open={confirmDialog.open}

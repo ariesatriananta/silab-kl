@@ -295,6 +295,7 @@ export const borrowingTransactions = pgTable(
     semesterLabel: varchar("semester_label", { length: 50 }).default("").notNull(),
     groupName: varchar("group_name", { length: 50 }).default("").notNull(),
     advisorLecturerName: varchar("advisor_lecturer_name", { length: 200 }),
+    step1ApproverUserId: uuid("step1_approver_user_id").references(() => users.id, { onDelete: "set null" }),
     approvalMatrixId: uuid("approval_matrix_id"),
     status: borrowingStatusEnum("status").default("submitted").notNull(),
     requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
@@ -317,6 +318,7 @@ export const borrowingTransactions = pgTable(
     index("borrowing_transactions_creator_requested_idx").on(t.createdByUserId, t.requestedAt),
     index("borrowing_transactions_lab_status_requested_idx").on(t.labId, t.status, t.requestedAt),
     index("borrowing_transactions_status_requested_idx").on(t.status, t.requestedAt),
+    index("borrowing_transactions_step1_approver_idx").on(t.step1ApproverUserId),
     index("borrowing_transactions_approval_matrix_idx").on(t.approvalMatrixId),
   ],
 )

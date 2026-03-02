@@ -18,7 +18,13 @@ export function getDashboardAccessRedirect(input: DashboardRedirectInput): strin
 
   if (role === "mahasiswa") {
     if (pathname === "/dashboard") return "/dashboard/student-tools"
-    if (pathname !== "/dashboard/student-tools" && pathname !== "/dashboard/account/security") {
+    const mahasiswaAllowedPaths = new Set([
+      "/dashboard/student-tools",
+      "/dashboard/borrowing",
+      "/dashboard/account/profile",
+      "/dashboard/account/security",
+    ])
+    if (!mahasiswaAllowedPaths.has(pathname)) {
       return "/dashboard/student-tools"
     }
   }

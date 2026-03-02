@@ -190,13 +190,8 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
                     </span>
                   </div>
 
-                  <Button
-                    className="w-full"
-                    disabled={!isAvailable}
-                    variant={isAvailable ? "default" : "secondary"}
-                    asChild={isAvailable}
-                  >
-                    {isAvailable ? (
+                  {isAvailable ? (
+                    <Button className="w-full" asChild>
                       <Link
                         href={`/dashboard/borrowing?openCreate=1&labId=${encodeURIComponent(tool.labId)}&toolModelCode=${encodeURIComponent(tool.id)}`}
                         className="flex items-center justify-center gap-2"
@@ -204,10 +199,12 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
                         Pinjam Sekarang
                         <ArrowRight className="size-4" />
                       </Link>
-                    ) : (
-                      "Tidak Tersedia"
-                    )}
-                  </Button>
+                    </Button>
+                  ) : (
+                    <Button className="w-full" disabled variant="secondary">
+                      Tidak Tersedia
+                    </Button>
+                  )}
                 </div>
               </CardContent>
             </Card>

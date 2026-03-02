@@ -15,7 +15,7 @@ import {
   Network,
   Loader2,
 } from "lucide-react"
-import { useState } from "react"
+import { useEffect, useState } from "react"
 import {
   Sidebar,
   SidebarContent,
@@ -38,7 +38,7 @@ const mainNavItems: Array<{
   icon: typeof LayoutDashboard
   roles: Role[]
 }> = [
-  { title: "Peminjaman", href: "/dashboard/borrowing", icon: ArrowLeftRight, roles: ["admin", "petugas_plp", "dosen"] },
+  { title: "Peminjaman", href: "/dashboard/borrowing", icon: ArrowLeftRight, roles: ["admin", "petugas_plp", "dosen", "mahasiswa"] },
   { title: "Bahan Habis Pakai", href: "/dashboard/consumables", icon: FlaskConical, roles: ["admin", "petugas_plp"] },
   { title: "Penggunaan Lab", href: "/dashboard/lab-usage", icon: CalendarDays, roles: ["admin", "petugas_plp"] },
   { title: "Alat Laboratorium", href: "/dashboard/tools", icon: Wrench, roles: ["admin", "petugas_plp"] },
@@ -58,6 +58,16 @@ export function AppSidebar() {
   const pathname = usePathname()
   const { data: session } = useSession()
   const [pendingHref, setPendingHref] = useState<string | null>(null)
+
+  useEffect(() => {
+    if (!pendingHref) return
+    if (pathname === pendingHref) {
+      setPendingHref(null)
+      return
+    }
+    const timer = window.setTimeout(() => setPendingHref(null), 1500)
+    return () => window.clearTimeout(timer)
+  }, [pathname, pendingHref])
 
   const role = (session?.user?.role as Role | undefined) ?? "mahasiswa"
   const visibleMainNav = mainNavItems.filter((item) => item.roles.includes(role))

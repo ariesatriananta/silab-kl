@@ -56,7 +56,7 @@ function pendingApprovalCountSql(actorUserId: string, step: 1 | 2) {
       where bt.status in ('submitted', 'pending_approval')
         and ${
           step === 1
-            ? sql`bam.step1_approver_user_id = ${actorUserId}`
+            ? sql`coalesce(bt.step1_approver_user_id, bam.step1_approver_user_id) = ${actorUserId}`
             : sql`bam.step2_approver_user_id = ${actorUserId}`
         }
         and not exists (
@@ -112,7 +112,7 @@ export async function GET() {
         sql`exists (
           select 1 from borrowing_approval_matrices bam
           where bam.id = ${borrowingTransactions.approvalMatrixId}
-            and bam.step1_approver_user_id = ${userId}
+            and coalesce(${borrowingTransactions.step1ApproverUserId}, bam.step1_approver_user_id) = ${userId}
         )`,
       ),
     )

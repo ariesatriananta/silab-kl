@@ -75,10 +75,22 @@ export function HeaderNotificationMenu() {
 
   useEffect(() => {
     void fetchSummary("initial")
-    const timer = window.setInterval(() => {
-      void fetchSummary("refresh")
-    }, 60_000)
-    return () => window.clearInterval(timer)
+    const tick = () => {
+      if (document.visibilityState === "visible") {
+        void fetchSummary("refresh")
+      }
+    }
+    const timer = window.setInterval(tick, 60_000)
+    const onVisibilityChange = () => {
+      if (document.visibilityState === "visible") {
+        void fetchSummary("refresh")
+      }
+    }
+    document.addEventListener("visibilitychange", onVisibilityChange)
+    return () => {
+      window.clearInterval(timer)
+      document.removeEventListener("visibilitychange", onVisibilityChange)
+    }
   }, [])
 
   const hasUnread = data.totalUnread > 0
@@ -117,9 +129,6 @@ export function HeaderNotificationMenu() {
           size="icon"
           aria-label="Notifikasi"
           title="Notifikasi"
-          onClick={() => {
-            void fetchSummary("refresh")
-          }}
           className="relative h-10 w-10 rounded-full border border-border/60 bg-background/90 shadow-sm transition hover:bg-muted/40"
         >
           <Bell className={`size-4 ${hasUnread ? "text-primary" : "text-muted-foreground"}`} />

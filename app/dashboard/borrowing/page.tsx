@@ -4,10 +4,8 @@ import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
 import {
   type BorrowingCreateApprovalRouteOption,
   BorrowingPageClient,
-  type BorrowingCreateConsumableOption,
   type BorrowingCreateLabOption,
   type BorrowingCreateRequesterOption,
-  type BorrowingCreateToolOption,
   type BorrowingDetail,
   type BorrowingListRow,
 } from "@/components/borrowing/borrowing-page-client"
@@ -51,6 +49,7 @@ type PendingApprovalInfo = {
 
 function getMatrixRequiredApprover(input: {
   approvalsCount: number
+  transactionStep1ApproverUserId: string | null
   matrixId: string | null
   matrixById: Map<
     string,
@@ -65,7 +64,10 @@ function getMatrixRequiredApprover(input: {
   const matrix = input.matrixById.get(input.matrixId)
   if (!matrix) return null
   if (input.approvalsCount <= 0) {
-    return { stepOrder: 1 as const, approverUserId: matrix.step1ApproverUserId }
+    return {
+      stepOrder: 1 as const,
+      approverUserId: input.transactionStep1ApproverUserId ?? matrix.step1ApproverUserId,
+    }
   }
   if (input.approvalsCount === 1) {
     return { stepOrder: 2 as const, approverUserId: matrix.step2ApproverUserId }
@@ -182,7 +184,7 @@ async function getBorrowingData(
                   sql`exists (
                     select 1 from borrowing_approval_matrices bam
                     where bam.id = ${borrowingTransactions.approvalMatrixId}
-                      and bam.step1_approver_user_id = ${userId}
+                      and coalesce(${borrowingTransactions.step1ApproverUserId}, bam.step1_approver_user_id) = ${userId}
                   )`,
                 )
               : or(
@@ -253,7 +255,7 @@ async function getBorrowingData(
           when not exists (
             select 1 from borrowing_approval_matrices bam
             where bam.id = ${borrowingTransactions.approvalMatrixId}
-              and bam.step1_approver_user_id is not null
+              and coalesce(${borrowingTransactions.step1ApproverUserId}, bam.step1_approver_user_id) is not null
           ) then 90
           when not exists (
             select 1 from borrowing_approval_matrices bam
@@ -297,6 +299,7 @@ async function getBorrowingData(
       semesterLabel: borrowingTransactions.semesterLabel,
       groupName: borrowingTransactions.groupName,
       advisorLecturerName: borrowingTransactions.advisorLecturerName,
+      step1ApproverUserId: borrowingTransactions.step1ApproverUserId,
       approvalMatrixId: borrowingTransactions.approvalMatrixId,
       status: borrowingTransactions.status,
       requesterName: users.fullName,
@@ -338,37 +341,15 @@ async function getBorrowingData(
     }
   }
 
-  const [
-    itemRows,
-    approvalRows,
-    approvalHistoryRows,
-    handoverHistoryRows,
-    returnCountRows,
-    returnedItemRows,
-    returnRows,
-    returnItemRows,
-    matrixRowsForTx,
-    approverUserRows,
-  ] =
-    await Promise.all([
-      db
-        .select({
+  const [itemRows, approvalRows, matrixRowsForTx] = await Promise.all([
+    db
+      .select({
         transactionId: borrowingTransactionItems.transactionId,
         itemId: borrowingTransactionItems.id,
-        itemType: borrowingTransactionItems.itemType,
-        qty: borrowingTransactionItems.qtyRequested,
-        toolAssetId: borrowingTransactionItems.toolAssetId,
-        toolName: toolModels.name,
-        assetCode: toolAssets.assetCode,
-        consumableName: consumableItems.name,
-        consumableUnit: consumableItems.unit,
       })
       .from(borrowingTransactionItems)
-      .leftJoin(toolAssets, eq(toolAssets.id, borrowingTransactionItems.toolAssetId))
-      .leftJoin(toolModels, eq(toolModels.id, toolAssets.toolModelId))
-      .leftJoin(consumableItems, eq(consumableItems.id, borrowingTransactionItems.consumableItemId))
       .where(inArray(borrowingTransactionItems.transactionId, txIds)),
-      db
+    db
       .select({
         transactionId: borrowingApprovals.transactionId,
         count: sql<number>`count(*)`,
@@ -376,190 +357,59 @@ async function getBorrowingData(
       .from(borrowingApprovals)
       .where(eq(borrowingApprovals.decision, "approved"))
       .groupBy(borrowingApprovals.transactionId),
-      db
+    db
       .select({
-        transactionId: borrowingApprovals.transactionId,
-        decision: borrowingApprovals.decision,
-        decidedAt: borrowingApprovals.decidedAt,
-        note: borrowingApprovals.note,
-        approverName: users.fullName,
-        approverRole: users.role,
+        id: borrowingApprovalMatrices.id,
+        step1ApproverUserId: borrowingApprovalMatrices.step1ApproverUserId,
+        step2ApproverUserId: borrowingApprovalMatrices.step2ApproverUserId,
       })
-      .from(borrowingApprovals)
-      .innerJoin(users, eq(users.id, borrowingApprovals.approverUserId))
-      .where(inArray(borrowingApprovals.transactionId, txIds))
-      .orderBy(asc(borrowingApprovals.decidedAt)),
-      db
-        .select({
-          transactionId: borrowingHandovers.transactionId,
-          handedOverAt: borrowingHandovers.handedOverAt,
-          dueDate: borrowingHandovers.dueDate,
-          note: borrowingHandovers.note,
-          handedOverByName: users.fullName,
-        })
-        .from(borrowingHandovers)
-        .innerJoin(users, eq(users.id, borrowingHandovers.handedOverByUserId))
-        .where(inArray(borrowingHandovers.transactionId, txIds))
-        .orderBy(desc(borrowingHandovers.handedOverAt)),
-      db
-        .select({
-        transactionId: borrowingReturns.transactionId,
-        count: sql<number>`count(${borrowingReturnItems.id})`,
-      })
-      .from(borrowingReturns)
-      .leftJoin(borrowingReturnItems, eq(borrowingReturnItems.returnId, borrowingReturns.id))
-      .where(inArray(borrowingReturns.transactionId, txIds))
-      .groupBy(borrowingReturns.transactionId),
-      db
-      .select({
-        transactionItemId: borrowingReturnItems.transactionItemId,
-      })
-      .from(borrowingReturnItems)
-      .innerJoin(borrowingReturns, eq(borrowingReturns.id, borrowingReturnItems.returnId))
-      .where(inArray(borrowingReturns.transactionId, txIds)),
-      db
-      .select({
-        returnId: borrowingReturns.id,
-        transactionId: borrowingReturns.transactionId,
-        returnedAt: borrowingReturns.returnedAt,
-        note: borrowingReturns.note,
-        receivedByName: users.fullName,
-      })
-      .from(borrowingReturns)
-      .innerJoin(users, eq(users.id, borrowingReturns.receivedByUserId))
-      .where(inArray(borrowingReturns.transactionId, txIds))
-      .orderBy(desc(borrowingReturns.returnedAt)),
-      db
-      .select({
-        returnId: borrowingReturnItems.returnId,
-        transactionItemId: borrowingReturnItems.transactionItemId,
-        returnCondition: borrowingReturnItems.returnCondition,
-        note: borrowingReturnItems.note,
-        toolName: toolModels.name,
-        assetCode: toolAssets.assetCode,
-      })
-      .from(borrowingReturnItems)
-      .innerJoin(toolAssets, eq(toolAssets.id, borrowingReturnItems.toolAssetId))
-      .innerJoin(toolModels, eq(toolModels.id, toolAssets.toolModelId))
-      .innerJoin(borrowingReturns, eq(borrowingReturns.id, borrowingReturnItems.returnId))
-      .where(inArray(borrowingReturns.transactionId, txIds)),
-      db
-        .select({
-          id: borrowingApprovalMatrices.id,
-          step1ApproverUserId: borrowingApprovalMatrices.step1ApproverUserId,
-          step2ApproverUserId: borrowingApprovalMatrices.step2ApproverUserId,
-        })
-        .from(borrowingApprovalMatrices)
-        .where(
-          (() => {
-            const matrixIds = txRows
-              .map((row) => row.approvalMatrixId)
-              .filter((value): value is string => Boolean(value))
-            return matrixIds.length > 0
-              ? inArray(borrowingApprovalMatrices.id, matrixIds)
-              : sql`false`
-          })(),
-        ),
-      db
-        .select({
-          id: users.id,
-          fullName: users.fullName,
-        })
-        .from(userLabAssignments)
-        .innerJoin(users, eq(users.id, userLabAssignments.userId))
-        .where(
-          and(
-            inArray(userLabAssignments.labId, [...new Set(txRows.map((row) => row.labId))]),
-            inArray(users.role, ["dosen", "petugas_plp"]),
-            eq(users.isActive, true),
-          ),
-        )
-        .orderBy(asc(users.fullName)),
-    ])
+      .from(borrowingApprovalMatrices)
+      .where(
+        (() => {
+          const matrixIds = txRows
+            .map((row) => row.approvalMatrixId)
+            .filter((value): value is string => Boolean(value))
+          return matrixIds.length > 0 ? inArray(borrowingApprovalMatrices.id, matrixIds) : sql`false`
+        })(),
+      ),
+  ])
+
+  const approverIds = Array.from(
+    new Set(
+      [
+        ...txRows.map((row) => row.step1ApproverUserId),
+        ...matrixRowsForTx.map((row) => row.step1ApproverUserId),
+        ...matrixRowsForTx.map((row) => row.step2ApproverUserId),
+      ].filter((value): value is string => Boolean(value)),
+    ),
+  )
+  const approverUserRows =
+    approverIds.length > 0
+      ? await db
+          .select({
+            id: users.id,
+            fullName: users.fullName,
+          })
+          .from(users)
+          .where(and(inArray(users.id, approverIds), eq(users.isActive, true)))
+      : []
 
   const txIdSet = new Set(txRows.map((row) => row.id))
-
-  const returnedItemIdSet = new Set(returnedItemRows.map((r) => r.transactionItemId))
-  const itemMap = new Map<string, BorrowingDetail["items"]>()
+  const itemCountByTx = new Map<string, number>()
   for (const row of itemRows) {
     if (!txIdSet.has(row.transactionId)) continue
-    const list = itemMap.get(row.transactionId) ?? []
-    list.push({
-      id: row.itemId,
-      itemType: row.itemType,
-      name: row.itemType === "tool_asset" ? (row.toolName ?? "Alat") : (row.consumableName ?? "Bahan"),
-      qty: row.qty,
-      toolAssetId: row.toolAssetId,
-      assetCode: row.assetCode,
-      unit: row.consumableUnit,
-      returned: returnedItemIdSet.has(row.itemId),
-    })
-    itemMap.set(row.transactionId, list)
+    itemCountByTx.set(row.transactionId, (itemCountByTx.get(row.transactionId) ?? 0) + 1)
   }
 
   const approvalCountByTx = new Map(approvalRows.map((r) => [r.transactionId, Number(r.count)]))
   const matrixById = new Map(matrixRowsForTx.map((row) => [row.id, row]))
   const userById = new Map(approverUserRows.map((row) => [row.id, row.fullName]))
-  const returnCountByTx = new Map(returnCountRows.map((r) => [r.transactionId, Number(r.count)]))
-  const handoverHistoryByTx = new Map<string, BorrowingDetail["handoverHistory"]>()
-  for (const row of handoverHistoryRows) {
-    if (!txIdSet.has(row.transactionId)) continue
-    const list = handoverHistoryByTx.get(row.transactionId) ?? []
-    list.push({
-      handedOverAt: fmtDateTime(row.handedOverAt) ?? "-",
-      dueDate: fmtDate(row.dueDate) ?? "-",
-      handedOverByName: row.handedOverByName,
-      note: row.note,
-    })
-    handoverHistoryByTx.set(row.transactionId, list)
-  }
-
-  const approvalHistoryByTx = new Map<string, BorrowingDetail["approvalHistory"]>()
-  for (const row of approvalHistoryRows) {
-    if (!txIdSet.has(row.transactionId)) continue
-    const list = approvalHistoryByTx.get(row.transactionId) ?? []
-    list.push({
-      approverName: row.approverName,
-      approverRole: row.approverRole,
-      decision: row.decision,
-      decidedAt: fmtDateTime(row.decidedAt) ?? "-",
-      note: row.note,
-    })
-    approvalHistoryByTx.set(row.transactionId, list)
-  }
-
-  const returnItemsByReturnId = new Map<string, NonNullable<BorrowingDetail["returnEvents"]>[number]["items"]>()
-  for (const row of returnItemRows) {
-    const list = returnItemsByReturnId.get(row.returnId) ?? []
-    list.push({
-      transactionItemId: row.transactionItemId,
-      toolName: row.toolName,
-      assetCode: row.assetCode,
-      returnCondition: row.returnCondition,
-      note: row.note,
-    })
-    returnItemsByReturnId.set(row.returnId, list)
-  }
-
-  const returnEventsByTx = new Map<string, BorrowingDetail["returnEvents"]>()
-  for (const row of returnRows) {
-    if (!txIdSet.has(row.transactionId)) continue
-    const list = returnEventsByTx.get(row.transactionId) ?? []
-    list.push({
-      returnedAt: fmtDateTime(row.returnedAt) ?? "-",
-      receivedByName: row.receivedByName,
-      note: row.note,
-      items: returnItemsByReturnId.get(row.returnId) ?? [],
-    })
-    returnEventsByTx.set(row.transactionId, list)
-  }
-
   const rows: BorrowingListRow[] = txRows.map((row) => {
     const status = mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate })
-    const items = itemMap.get(row.id) ?? []
     const matrix = row.approvalMatrixId ? matrixById.get(row.approvalMatrixId) : undefined
     const requiredApprover = getMatrixRequiredApprover({
       approvalsCount: approvalCountByTx.get(row.id) ?? 0,
+      transactionStep1ApproverUserId: row.step1ApproverUserId,
       matrixId: row.approvalMatrixId,
       matrixById,
     })
@@ -571,7 +421,9 @@ async function getBorrowingData(
       status,
       approvalsCount: approvalCountByTx.get(row.id) ?? 0,
       matrixId: row.approvalMatrixId,
-      step1ApproverName: matrix?.step1ApproverUserId ? userById.get(matrix.step1ApproverUserId) ?? null : null,
+      step1ApproverName:
+        (row.step1ApproverUserId ? userById.get(row.step1ApproverUserId) ?? null : null) ??
+        (matrix?.step1ApproverUserId ? userById.get(matrix.step1ApproverUserId) ?? null : null),
       step2ApproverName: matrix?.step2ApproverUserId ? userById.get(matrix.step2ApproverUserId) ?? null : null,
     })
     return {
@@ -591,7 +443,7 @@ async function getBorrowingData(
       semesterLabel: row.semesterLabel,
       groupName: row.groupName,
       advisorLecturerName: row.advisorLecturerName,
-      itemCount: items.length,
+      itemCount: itemCountByTx.get(row.id) ?? 0,
       pendingApprovalLabel: pendingApproval?.label ?? null,
       pendingApprovalApprovers: pendingApproval?.approvers ?? [],
       pendingApprovalTriage: pendingApproval?.triage ?? null,
@@ -600,68 +452,9 @@ async function getBorrowingData(
     }
   })
 
-  const details: Record<string, BorrowingDetail> = Object.fromEntries(
-    txRows.map((row) => {
-      const status = mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate })
-      const matrix = row.approvalMatrixId ? matrixById.get(row.approvalMatrixId) : undefined
-      const requiredApprover = getMatrixRequiredApprover({
-        approvalsCount: approvalCountByTx.get(row.id) ?? 0,
-        matrixId: row.approvalMatrixId,
-        matrixById,
-      })
-      const requiredApproverName =
-        requiredApprover?.approverUserId ? userById.get(requiredApprover.approverUserId) ?? null : null
-      const adminOverrideReasonRequired =
-        role === "admin" &&
-        status === "pending" &&
-        !!requiredApprover?.approverUserId &&
-        requiredApprover.approverUserId !== userId
-      const pendingApproval = getPendingApprovalInfo({
-        status,
-        approvalsCount: approvalCountByTx.get(row.id) ?? 0,
-        matrixId: row.approvalMatrixId,
-        step1ApproverName: matrix?.step1ApproverUserId ? userById.get(matrix.step1ApproverUserId) ?? null : null,
-        step2ApproverName: matrix?.step2ApproverUserId ? userById.get(matrix.step2ApproverUserId) ?? null : null,
-      })
-      return [
-        row.id,
-        {
-          id: row.id,
-          code: row.code,
-          borrower: row.requesterName,
-          nim: row.requesterNim,
-          status,
-          purpose: row.purpose,
-          courseName: row.courseName,
-          materialTopic: row.materialTopic,
-          semesterLabel: row.semesterLabel,
-          groupName: row.groupName,
-          advisorLecturerName: row.advisorLecturerName,
-          requestedAt: fmtDate(row.requestedAt) ?? "-",
-          borrowDate: fmtDate(row.handedOverAt),
-          dueDate: fmtDate(row.dueDate),
-          labName: row.labName,
-          approvalsCount: approvalCountByTx.get(row.id) ?? 0,
-          pendingApprovalLabel: pendingApproval?.label ?? null,
-          pendingApprovalApprovers: pendingApproval?.approvers ?? [],
-          pendingApprovalTriage: pendingApproval?.triage ?? null,
-          pendingRequiredApproverName: requiredApproverName,
-          adminOverrideReasonRequired,
-          items: itemMap.get(row.id) ?? [],
-          approvalHistory: approvalHistoryByTx.get(row.id) ?? [],
-          handoverHistory: handoverHistoryByTx.get(row.id) ?? [],
-          returnEvents: returnEventsByTx.get(row.id) ?? [],
-        } satisfies BorrowingDetail,
-      ]
-    }),
-  )
-
-  // For later usage (currently not shown, but useful if needed)
-  void returnCountByTx
-
   return {
     rows,
-    details,
+    details: {} as Record<string, BorrowingDetail>,
     accessibleLabIds,
     activeFilters: filters,
     pagination: {
@@ -681,7 +474,7 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
         : sql`false`
       : undefined
 
-  const [labRows, requesterRows, toolRows, consumableRows, matrixRows, approverRows] = await Promise.all([
+  const [labRows, requesterRows, matrixRows] = await Promise.all([
     db
       .select({ id: labs.id, name: labs.name })
       .from(labs)
@@ -699,50 +492,6 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
           .orderBy(asc(users.fullName)),
     db
       .select({
-        id: toolAssets.id,
-        modelId: toolModels.id,
-        modelCode: toolModels.code,
-        assetCode: toolAssets.assetCode,
-        toolName: toolModels.name,
-        labId: toolModels.labId,
-        labName: labs.name,
-      })
-      .from(toolAssets)
-      .innerJoin(toolModels, eq(toolModels.id, toolAssets.toolModelId))
-      .innerJoin(labs, eq(labs.id, toolModels.labId))
-      .where(
-        and(
-          eq(toolAssets.status, "available"),
-          role !== "admin" && role !== "mahasiswa" && accessibleLabIds
-            ? accessibleLabIds.length > 0
-              ? inArray(toolModels.labId, accessibleLabIds)
-              : sql`false`
-            : undefined,
-        ),
-      )
-      .orderBy(asc(labs.name), asc(toolModels.name), asc(toolAssets.assetCode)),
-    db
-      .select({
-        id: consumableItems.id,
-        name: consumableItems.name,
-        code: consumableItems.code,
-        labId: consumableItems.labId,
-        labName: labs.name,
-        stockQty: consumableItems.stockQty,
-        unit: consumableItems.unit,
-      })
-      .from(consumableItems)
-      .innerJoin(labs, eq(labs.id, consumableItems.labId))
-      .where(
-        role !== "admin" && role !== "mahasiswa" && accessibleLabIds
-          ? accessibleLabIds.length > 0
-            ? inArray(consumableItems.labId, accessibleLabIds)
-            : sql`false`
-          : undefined,
-      )
-      .orderBy(asc(labs.name), asc(consumableItems.name)),
-    db
-      .select({
         id: borrowingApprovalMatrices.id,
         labId: borrowingApprovalMatrices.labId,
         isActive: borrowingApprovalMatrices.isActive,
@@ -752,19 +501,6 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
       .from(borrowingApprovalMatrices)
       .innerJoin(labs, eq(labs.id, borrowingApprovalMatrices.labId))
       .where(labScopeWhere),
-    db
-      .select({
-        labId: userLabAssignments.labId,
-        role: users.role,
-        id: users.id,
-        fullName: users.fullName,
-        nip: users.nip,
-      })
-      .from(userLabAssignments)
-      .innerJoin(users, eq(users.id, userLabAssignments.userId))
-      .innerJoin(labs, eq(labs.id, userLabAssignments.labId))
-      .where(and(inArray(users.role, ["dosen", "petugas_plp"]), eq(users.isActive, true), labScopeWhere))
-      .orderBy(asc(users.fullName)),
   ])
 
   const labsOptions: BorrowingCreateLabOption[] = labRows.map((row) => ({ id: row.id, name: row.name }))
@@ -772,65 +508,74 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
     id: row.id,
     label: row.nim ? `${row.fullName} (${row.nim})` : row.fullName,
   }))
-  const toolOptions: BorrowingCreateToolOption[] = toolRows.map((row) => ({
-    id: row.id,
-    modelId: row.modelId,
-    modelCode: row.modelCode,
-    labId: row.labId,
-    label: `${row.toolName} - ${row.assetCode} - ${row.labName}`,
-  }))
-  const consumableOptions: BorrowingCreateConsumableOption[] = consumableRows.map((row) => ({
-    id: row.id,
-    labId: row.labId,
-    label: `${row.name} - ${row.labName} (stok ${row.stockQty} ${row.unit})`,
-    stockQty: row.stockQty,
-    unit: row.unit,
-  }))
-
   const matrixByLab = new Map(matrixRows.map((row) => [row.labId, row]))
 
-  const approversByLab = new Map<
-    string,
-    {
-      dosen: Array<{ id: string; name: string; identifier: string | null }>
-      plp: Array<{ id: string; name: string; identifier: string | null }>
-    }
-  >()
-  for (const row of approverRows) {
-    const bucket = approversByLab.get(row.labId) ?? { dosen: [], plp: [] }
-    if (row.role === "dosen") {
-      bucket.dosen.push({ id: row.id, name: row.fullName, identifier: row.nip })
-    }
-    if (row.role === "petugas_plp") {
-      bucket.plp.push({ id: row.id, name: row.fullName, identifier: row.nip })
-    }
-    approversByLab.set(row.labId, bucket)
+  const dosenRows =
+    labsOptions.length > 0
+      ? await db
+          .select({
+            labId: userLabAssignments.labId,
+            id: users.id,
+            fullName: users.fullName,
+            nip: users.nip,
+          })
+          .from(userLabAssignments)
+          .innerJoin(users, eq(users.id, userLabAssignments.userId))
+          .where(
+            and(
+              inArray(userLabAssignments.labId, labsOptions.map((lab) => lab.id)),
+              eq(users.role, "dosen"),
+              eq(users.isActive, true),
+            ),
+          )
+          .orderBy(asc(users.fullName))
+      : []
+  const dosenByLab = new Map<string, Array<{ id: string; name: string; identifier: string | null }>>()
+  for (const row of dosenRows) {
+    const list = dosenByLab.get(row.labId) ?? []
+    list.push({ id: row.id, name: row.fullName, identifier: row.nip })
+    dosenByLab.set(row.labId, list)
   }
+
+  const plpApproverIds = Array.from(
+    new Set(matrixRows.map((row) => row.step2ApproverUserId).filter((value): value is string => Boolean(value))),
+  )
+  const plpRows =
+    plpApproverIds.length > 0
+      ? await db
+          .select({
+            id: users.id,
+            role: users.role,
+            fullName: users.fullName,
+            nip: users.nip,
+          })
+          .from(users)
+          .where(and(inArray(users.id, plpApproverIds), eq(users.role, "petugas_plp"), eq(users.isActive, true)))
+      : []
+  const plpById = new Map(
+    plpRows.map((row) => [row.id, { id: row.id, role: row.role, name: row.fullName, identifier: row.nip }] as const),
+  )
 
   const approvalRoutes: BorrowingCreateApprovalRouteOption[] = labsOptions.map((lab) => {
     const matrix = matrixByLab.get(lab.id)
-    const approvers = approversByLab.get(lab.id) ?? { dosen: [], plp: [] }
-    const selectedDosen = matrix?.step1ApproverUserId
-      ? approvers.dosen.filter((item) => item.id === matrix.step1ApproverUserId)
-      : []
-    const selectedPlp = matrix?.step2ApproverUserId
-      ? approvers.plp.filter((item) => item.id === matrix.step2ApproverUserId)
-      : []
-    const matrixValid = Boolean(matrix?.step1ApproverUserId && matrix?.step2ApproverUserId)
-    const isReady = Boolean(matrix?.isActive && matrixValid && selectedDosen.length > 0 && selectedPlp.length > 0)
+    const mappedDosen = dosenByLab.get(lab.id) ?? []
+    const step2 = matrix?.step2ApproverUserId ? plpById.get(matrix.step2ApproverUserId) : null
+    const selectedPlp = step2 && step2.role === "petugas_plp" ? [{ id: step2.id, name: step2.name, identifier: step2.identifier }] : []
+    const matrixValid = Boolean(matrix?.step2ApproverUserId)
+    const isReady = Boolean(matrix?.isActive && matrixValid && mappedDosen.length > 0 && selectedPlp.length > 0)
     return {
       labId: lab.id,
       matrixActive: matrix?.isActive ?? false,
       matrixValid,
       isReady,
-      step1Role: selectedDosen.length > 0 ? "dosen" : null,
+      step1Role: mappedDosen.length > 0 ? "dosen" : null,
       step2Role: selectedPlp.length > 0 ? "petugas_plp" : null,
-      dosenApprovers: selectedDosen,
+      dosenApprovers: mappedDosen,
       plpApprovers: selectedPlp,
     }
   })
 
-  return { labsOptions, requesterOptions, toolOptions, consumableOptions, approvalRoutes }
+  return { labsOptions, requesterOptions, approvalRoutes }
 }
 
 export default async function BorrowingPage({
@@ -894,8 +639,6 @@ export default async function BorrowingPage({
       createOptions={{
         labs: options.labsOptions,
         requesters: options.requesterOptions,
-        tools: options.toolOptions,
-        consumables: options.consumableOptions,
         approvalRoutes: options.approvalRoutes,
       }}
       pagination={pagination}

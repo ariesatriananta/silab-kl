@@ -2,11 +2,12 @@ import test from "node:test"
 import assert from "node:assert/strict"
 
 import { config as loadDotenv } from "dotenv"
-import { eq, inArray, sql } from "drizzle-orm"
+import { and, eq, inArray, sql } from "drizzle-orm"
 
 import { createDb } from "@/lib/db/create-db"
 import {
   borrowingApprovals,
+  borrowingApprovalMatrices,
   borrowingHandoverConsumableLines,
   borrowingHandovers,
   borrowingReturnItems,
@@ -18,6 +19,7 @@ import {
   labs,
   toolAssets,
   toolModels,
+  userLabAssignments,
   users,
 } from "@/lib/db/schema"
 
@@ -491,5 +493,181 @@ test("integration: handover should remain waiting when consumable stock insuffic
       borrowingId,
       consumableIds: consumableId ? [consumableId] : [],
     })
+  }
+})
+
+test("integration: step 1 approver mengikuti step1_approver_user_id di transaksi", async () => {
+  const { plp, mahasiswa } = await getSeedUsers()
+
+  let borrowingId: string | null = null
+  let matrixId: string | null = null
+  let labId: string | null = null
+  let dosenAId: string | null = null
+  let dosenBId: string | null = null
+
+  try {
+    const [lab] = await db
+      .insert(labs)
+      .values({
+        code: randomCode("LAB-ITEST"),
+        name: randomCode("Lab ITest"),
+        isActive: true,
+      })
+      .returning({ id: labs.id })
+    assert.ok(lab)
+    labId = lab.id
+
+    const [dosenA] = await db
+      .insert(users)
+      .values({
+        username: randomCode("dosen.a"),
+        fullName: "Dosen ITest A",
+        role: "dosen",
+        passwordHash: "test-hash",
+        isActive: true,
+      })
+      .returning({ id: users.id })
+    assert.ok(dosenA)
+    dosenAId = dosenA.id
+
+    const [dosenB] = await db
+      .insert(users)
+      .values({
+        username: randomCode("dosen.b"),
+        fullName: "Dosen ITest B",
+        role: "dosen",
+        passwordHash: "test-hash",
+        isActive: true,
+      })
+      .returning({ id: users.id })
+    assert.ok(dosenB)
+    dosenBId = dosenB.id
+
+    await db.insert(userLabAssignments).values([
+      { userId: dosenA.id, labId: lab.id },
+      { userId: dosenB.id, labId: lab.id },
+      { userId: plp.id, labId: lab.id },
+    ])
+
+    const [matrix] = await db
+      .insert(borrowingApprovalMatrices)
+      .values({
+        labId: lab.id,
+        isActive: true,
+        step1ApproverUserId: dosenA.id,
+        step2ApproverUserId: plp.id,
+      })
+      .returning({ id: borrowingApprovalMatrices.id })
+    assert.ok(matrix)
+    matrixId = matrix.id
+
+    const [borrowing] = await db
+      .insert(borrowingTransactions)
+      .values({
+        code: randomCode("BRW-STEP1"),
+        labId: lab.id,
+        requesterUserId: mahasiswa.id,
+        createdByUserId: mahasiswa.id,
+        purpose: "Step1 approver override test",
+        courseName: "Test",
+        materialTopic: "Test",
+        semesterLabel: "1",
+        groupName: "A",
+        advisorLecturerName: "Dosen ITest B",
+        step1ApproverUserId: dosenB.id,
+        approvalMatrixId: matrix.id,
+        status: "pending_approval",
+      })
+      .returning({ id: borrowingTransactions.id })
+    assert.ok(borrowing)
+    borrowingId = borrowing.id
+
+    const [countStep1A] = await db
+      .select({
+        total: sql<number>`
+          (
+            select count(*)
+            from borrowing_transactions bt
+            inner join borrowing_approval_matrices bam on bam.id = bt.approval_matrix_id
+            where bt.status in ('submitted', 'pending_approval')
+              and coalesce(bt.step1_approver_user_id, bam.step1_approver_user_id) = ${dosenA.id}
+              and not exists (
+                select 1
+                from borrowing_approvals ba_self
+                where ba_self.transaction_id = bt.id
+                  and ba_self.approver_user_id = ${dosenA.id}
+              )
+              and (
+                select count(*)
+                from borrowing_approvals ba_ok
+                where ba_ok.transaction_id = bt.id
+                  and ba_ok.decision = 'approved'
+              ) = 0
+          )
+        `,
+      })
+      .from(users)
+      .where(eq(users.id, dosenA.id))
+
+    const [countStep1B] = await db
+      .select({
+        total: sql<number>`
+          (
+            select count(*)
+            from borrowing_transactions bt
+            inner join borrowing_approval_matrices bam on bam.id = bt.approval_matrix_id
+            where bt.status in ('submitted', 'pending_approval')
+              and coalesce(bt.step1_approver_user_id, bam.step1_approver_user_id) = ${dosenB.id}
+              and not exists (
+                select 1
+                from borrowing_approvals ba_self
+                where ba_self.transaction_id = bt.id
+                  and ba_self.approver_user_id = ${dosenB.id}
+              )
+              and (
+                select count(*)
+                from borrowing_approvals ba_ok
+                where ba_ok.transaction_id = bt.id
+                  and ba_ok.decision = 'approved'
+              ) = 0
+          )
+        `,
+      })
+      .from(users)
+      .where(eq(users.id, dosenB.id))
+
+    assert.equal(Number(countStep1A?.total ?? 0), 0)
+    assert.equal(Number(countStep1B?.total ?? 0), 1)
+  } finally {
+    if (borrowingId) {
+      await db.delete(borrowingTransactions).where(eq(borrowingTransactions.id, borrowingId))
+    }
+    if (matrixId) {
+      await db.delete(borrowingApprovalMatrices).where(eq(borrowingApprovalMatrices.id, matrixId))
+    }
+    if (labId && dosenAId) {
+      await db
+        .delete(userLabAssignments)
+        .where(and(eq(userLabAssignments.userId, dosenAId), eq(userLabAssignments.labId, labId)))
+    }
+    if (labId && dosenBId) {
+      await db
+        .delete(userLabAssignments)
+        .where(and(eq(userLabAssignments.userId, dosenBId), eq(userLabAssignments.labId, labId)))
+    }
+    if (labId) {
+      await db
+        .delete(userLabAssignments)
+        .where(and(eq(userLabAssignments.userId, plp.id), eq(userLabAssignments.labId, labId)))
+    }
+    if (dosenAId) {
+      await db.delete(users).where(eq(users.id, dosenAId))
+    }
+    if (dosenBId) {
+      await db.delete(users).where(eq(users.id, dosenBId))
+    }
+    if (labId) {
+      await db.delete(labs).where(eq(labs.id, labId))
+    }
   }
 })
