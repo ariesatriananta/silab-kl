@@ -13,6 +13,7 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "@/components/ui/dialog"
 import { Empty, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { Label } from "@/components/ui/label"
+import { KpiCard } from "@/components/ui/kpi-card"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -80,10 +81,10 @@ export function ApprovalMatrixPageClient({ rows }: { rows: ApprovalMatrixRow[] }
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Lab</p><p className="mt-1 text-lg font-semibold">{summary.total}</p></CardContent></Card>
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Matrix Aktif</p><p className="mt-1 text-lg font-semibold">{summary.active}</p></CardContent></Card>
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Matrix Nonaktif</p><p className="mt-1 text-lg font-semibold">{summary.inactive}</p></CardContent></Card>
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Lab Belum Siap</p><p className="mt-1 text-lg font-semibold">{summary.notReady}</p></CardContent></Card>
+        <KpiCard title="Total Lab" value={summary.total} />
+        <KpiCard title="Matrix Aktif" value={summary.active} tone="success" />
+        <KpiCard title="Matrix Nonaktif" value={summary.inactive} />
+        <KpiCard title="Lab Belum Siap" value={summary.notReady} tone="warning" />
       </div>
 
       <Card className="border-border/50 bg-card shadow-sm">

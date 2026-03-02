@@ -45,6 +45,7 @@ import {
 import { Switch } from "@/components/ui/switch"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
+import { KpiCard } from "@/components/ui/kpi-card"
 import { useToast } from "@/hooks/use-toast"
 
 export type UserLabOption = { id: string; name: string }
@@ -440,11 +441,11 @@ export function UsersPageClient({
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-5">
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Total Pengguna</p><p className="mt-1 text-lg font-semibold">{summary.total}</p></CardContent></Card>
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Pengguna Aktif</p><p className="mt-1 text-lg font-semibold">{summary.active}</p></CardContent></Card>
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Petugas PLP</p><p className="mt-1 text-lg font-semibold">{summary.plp}</p></CardContent></Card>
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Dosen</p><p className="mt-1 text-lg font-semibold">{summary.dosen}</p></CardContent></Card>
-        <Card className="border-border/50 bg-card shadow-sm"><CardContent className="p-4"><p className="text-xs text-muted-foreground">Mahasiswa</p><p className="mt-1 text-lg font-semibold">{summary.mahasiswa}</p></CardContent></Card>
+        <KpiCard title="Total Pengguna" value={summary.total} />
+        <KpiCard title="Pengguna Aktif" value={summary.active} tone="success" />
+        <KpiCard title="Petugas PLP" value={summary.plp} />
+        <KpiCard title="Dosen" value={summary.dosen} />
+        <KpiCard title="Mahasiswa" value={summary.mahasiswa} />
       </div>
 
       <Tabs value={activeTab} onValueChange={(v) => setActiveTab(v as "users" | "audit")} className="flex flex-col gap-4">

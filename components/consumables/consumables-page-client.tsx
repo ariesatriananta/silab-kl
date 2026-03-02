@@ -49,6 +49,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { ActionKpiTile } from "@/components/ui/action-kpi-tile"
 import { useToast } from "@/hooks/use-toast"
 
 export type ConsumableStockRow = {
@@ -395,48 +396,40 @@ export function ConsumablesPageClient({
           <CardTitle className="text-base font-semibold text-card-foreground">Butuh Tindakan</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <button
-            type="button"
+          <ActionKpiTile
+            title="Permintaan Butuh Tindakan"
+            metric={requestSummary.needsAction}
+            description="Menunggu persetujuan / siap dipenuhi"
+            tone="primary"
             onClick={() => {
               setActiveTab("requests")
               setRequestStatusFilter("needs_action")
             }}
-            className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10"
-          >
-            <p className="text-xs text-muted-foreground">Permintaan Butuh Tindakan</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">{requestSummary.needsAction}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Menunggu persetujuan / siap dipenuhi</p>
-          </button>
-          <button
-            type="button"
+          />
+          <ActionKpiTile
+            title="Stok Rendah"
+            metric={lowStockItems.length}
+            description="Perlu stok masuk / pengecekan"
+            tone="warning"
             onClick={() => setActiveTab("stock")}
-            className="rounded-lg border border-warning/20 bg-warning/5 p-3 text-left transition-colors hover:bg-warning/10"
-          >
-            <p className="text-xs text-muted-foreground">Stok Rendah</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">{lowStockItems.length}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Perlu stok masuk / pengecekan</p>
-          </button>
-          <button
-            type="button"
+          />
+          <ActionKpiTile
+            title="Permintaan Menunggu"
+            metric={requestSummary.pending}
+            description="Belum diproses"
+            tone="muted"
             onClick={() => {
               setActiveTab("requests")
               setRequestStatusFilter("pending")
             }}
-            className="rounded-lg border border-border/50 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
-          >
-            <p className="text-xs text-muted-foreground">Permintaan Menunggu</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">{requestSummary.pending}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Belum diproses</p>
-          </button>
-          <button
-            type="button"
+          />
+          <ActionKpiTile
+            title="Histori Stok"
+            metric={stockMovements.length}
+            description="Catatan pergerakan tersimpan"
+            tone="muted"
             onClick={() => setActiveTab("movements")}
-            className="rounded-lg border border-border/50 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
-          >
-            <p className="text-xs text-muted-foreground">Histori Stok</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">{stockMovements.length}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Catatan pergerakan tersimpan</p>
-          </button>
+          />
         </CardContent>
       </Card>
 

@@ -63,6 +63,7 @@ import {
 } from "@/components/ui/select"
 import { Separator } from "@/components/ui/separator"
 import { Textarea } from "@/components/ui/textarea"
+import { KpiCard } from "@/components/ui/kpi-card"
 import {
   Table,
   TableBody,
@@ -74,6 +75,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { useToast } from "@/hooks/use-toast"
+import { ActionKpiTile } from "@/components/ui/action-kpi-tile"
 
 type DisplayStatus =
   | "pending"
@@ -1135,95 +1137,47 @@ export function BorrowingPageClient({
 
       <div className={`grid gap-3 ${role === "mahasiswa" ? "" : "lg:grid-cols-[1fr_320px]"}`}>
         <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-4">
-          <Card className="border-border/50 bg-card shadow-sm">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-warning/10">
-                <Clock className="size-4 text-warning-foreground" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Pending</p>
-                <p className="text-lg font-bold text-card-foreground">{summary.pending}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border/50 bg-card shadow-sm">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-primary/10">
-                <Package className="size-4 text-primary" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Aktif</p>
-                <p className="text-lg font-bold text-card-foreground">{summary.active}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border/50 bg-card shadow-sm">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-destructive/10">
-                <XCircle className="size-4 text-destructive" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Terlambat</p>
-                <p className="text-lg font-bold text-card-foreground">{summary.overdue}</p>
-              </div>
-            </CardContent>
-          </Card>
-          <Card className="border-border/50 bg-card shadow-sm">
-            <CardContent className="flex items-center gap-3 p-4">
-              <div className="flex size-10 items-center justify-center rounded-lg bg-success/10">
-                <CheckCircle2 className="size-4 text-success-foreground" />
-              </div>
-              <div>
-                <p className="text-xs text-muted-foreground">Dikembalikan</p>
-                <p className="text-lg font-bold text-card-foreground">{summary.completed}</p>
-              </div>
-            </CardContent>
-          </Card>
+          <KpiCard title="Pending" value={summary.pending} icon={Clock} tone="warning" />
+          <KpiCard title="Aktif" value={summary.active} icon={Package} tone="primary" />
+          <KpiCard title="Terlambat" value={summary.overdue} icon={XCircle} tone="destructive" />
+          <KpiCard title="Dikembalikan" value={summary.completed} icon={CheckCircle2} tone="success" />
         </div>
       </div>
 
       {role !== "mahasiswa" && (
         <Card className="border-border/50 bg-card shadow-sm">
-          <CardHeader className="pb-3">
-            <CardTitle className="text-base font-semibold text-card-foreground">Butuh Tindakan</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-            <button
-              type="button"
+        <CardHeader className="pb-3">
+          <CardTitle className="text-base font-semibold text-card-foreground">Butuh Tindakan</CardTitle>
+        </CardHeader>
+        <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            <ActionKpiTile
+              title="Approval Pending"
+              metric={actionable.approval}
+              description="Butuh approval ke-1 atau ke-2"
+              tone="warning"
               onClick={() => applyListFilters({ status: "pending", page: 1 })}
-              className="rounded-lg border border-warning/20 bg-warning/5 p-3 text-left transition-colors hover:bg-warning/10"
-            >
-              <p className="text-xs text-muted-foreground">Approval Pending</p>
-              <p className="mt-1 text-lg font-semibold text-foreground">{actionable.approval}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Butuh approval ke-1 atau ke-2</p>
-            </button>
-            <button
-              type="button"
+            />
+            <ActionKpiTile
+              title="Menunggu Serah Terima"
+              metric={actionable.handover}
+              description="Siap diaktifkan via handover"
+              tone="primary"
               onClick={() => applyListFilters({ status: "approved_waiting_handover", page: 1 })}
-              className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10"
-            >
-              <p className="text-xs text-muted-foreground">Menunggu Serah Terima</p>
-              <p className="mt-1 text-lg font-semibold text-foreground">{actionable.handover}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Siap diaktifkan via handover</p>
-            </button>
-            <button
-              type="button"
+            />
+            <ActionKpiTile
+              title="Transaksi Aktif"
+              metric={actionable.returning}
+              description="Menunggu pengembalian alat"
+              tone="muted"
               onClick={() => applyListFilters({ status: "active", page: 1 })}
-              className="rounded-lg border border-border/50 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
-            >
-              <p className="text-xs text-muted-foreground">Transaksi Aktif</p>
-              <p className="mt-1 text-lg font-semibold text-foreground">{actionable.returning}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Menunggu pengembalian alat</p>
-            </button>
-            <button
-              type="button"
+            />
+            <ActionKpiTile
+              title="Keterlambatan"
+              metric={actionable.overdue}
+              description="Prioritas tindak lanjut"
+              tone="destructive"
               onClick={() => applyListFilters({ status: "overdue", page: 1 })}
-              className="rounded-lg border border-destructive/20 bg-destructive/5 p-3 text-left transition-colors hover:bg-destructive/10"
-            >
-              <p className="text-xs text-muted-foreground">Keterlambatan</p>
-              <p className="mt-1 text-lg font-semibold text-foreground">{actionable.overdue}</p>
-              <p className="mt-1 text-xs text-muted-foreground">Prioritas tindak lanjut</p>
-            </button>
+            />
           </CardContent>
         </Card>
       )}

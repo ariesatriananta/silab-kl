@@ -42,6 +42,7 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
+import { ActionKpiTile } from "@/components/ui/action-kpi-tile"
 import { useToast } from "@/hooks/use-toast"
 
 export type LabUsageLabOption = { id: string; name: string }
@@ -256,45 +257,37 @@ export function LabUsagePageClient({
           <CardTitle className="text-base font-semibold text-card-foreground">Fokus Kerja</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <button
-            type="button"
+          <ActionKpiTile
+            title="Operasional Harian"
+            metric="Catat Penggunaan"
+            description="Gunakan setelah sesi selesai"
+            tone="primary"
             onClick={() => {
               setActiveTab("history")
               setCreateUsageOpen(true)
             }}
-            className="rounded-lg border border-primary/20 bg-primary/5 p-3 text-left transition-colors hover:bg-primary/10"
-          >
-            <p className="text-xs text-muted-foreground">Operasional Harian</p>
-            <p className="mt-1 text-sm font-semibold text-foreground">Catat Penggunaan</p>
-            <p className="mt-1 text-xs text-muted-foreground">Gunakan setelah sesi selesai</p>
-          </button>
-          <button
-            type="button"
+          />
+          <ActionKpiTile
+            title="Jadwal Aktif"
+            metric={usageSummary.schedules}
+            description="Total jadwal tersimpan"
+            tone="muted"
             onClick={() => setActiveTab("schedule")}
-            className="rounded-lg border border-border/50 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
-          >
-            <p className="text-xs text-muted-foreground">Jadwal Aktif</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">{usageSummary.schedules}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Total jadwal tersimpan</p>
-          </button>
-          <button
-            type="button"
+          />
+          <ActionKpiTile
+            title="Riwayat Penggunaan"
+            metric={usageSummary.history}
+            description="Log penggunaan tersimpan"
+            tone="muted"
             onClick={() => setActiveTab("history")}
-            className="rounded-lg border border-border/50 bg-muted/30 p-3 text-left transition-colors hover:bg-muted/50"
-          >
-            <p className="text-xs text-muted-foreground">Riwayat Penggunaan</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">{usageSummary.history}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Log penggunaan tersimpan</p>
-          </button>
-          <button
-            type="button"
+          />
+          <ActionKpiTile
+            title="Riwayat tanpa Absensi"
+            metric={usageSummary.noAttendanceLogs}
+            description="Perlu dicek kelengkapan data"
+            tone="warning"
             onClick={() => setActiveTab("history")}
-            className="rounded-lg border border-warning/20 bg-warning/5 p-3 text-left transition-colors hover:bg-warning/10"
-          >
-            <p className="text-xs text-muted-foreground">Riwayat tanpa Absensi</p>
-            <p className="mt-1 text-lg font-semibold text-foreground">{usageSummary.noAttendanceLogs}</p>
-            <p className="mt-1 text-xs text-muted-foreground">Perlu dicek kelengkapan data</p>
-          </button>
+          />
         </CardContent>
       </Card>
 

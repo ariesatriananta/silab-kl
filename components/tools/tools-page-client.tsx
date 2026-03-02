@@ -16,6 +16,7 @@ import { Button } from "@/components/ui/button"
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card"
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
+import { KpiCard } from "@/components/ui/kpi-card"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -275,50 +276,10 @@ export function ToolsPageClient({
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        <Card className="border-border/50 bg-card shadow-sm">
-          <CardContent className="flex items-center gap-3 p-3">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-              <Wrench className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Total Unit</p>
-              <p className="text-base font-semibold text-foreground">{kpi.totalUnits}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card shadow-sm">
-          <CardContent className="flex items-center gap-3 p-3">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-success/10">
-              <CheckCircle2 className="size-4 text-success-foreground" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Tersedia</p>
-              <p className="text-base font-semibold text-foreground">{kpi.available}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card shadow-sm">
-          <CardContent className="flex items-center gap-3 p-3">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-primary/10">
-              <QrCode className="size-4 text-primary" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Dipinjam</p>
-              <p className="text-base font-semibold text-foreground">{kpi.borrowed}</p>
-            </div>
-          </CardContent>
-        </Card>
-        <Card className="border-border/50 bg-card shadow-sm">
-          <CardContent className="flex items-center gap-3 p-3">
-            <div className="flex size-9 items-center justify-center rounded-lg bg-warning/10">
-              <AlertTriangle className="size-4 text-warning-foreground" />
-            </div>
-            <div>
-              <p className="text-xs text-muted-foreground">Perlu Perhatian</p>
-              <p className="text-base font-semibold text-foreground">{kpi.issue}</p>
-            </div>
-          </CardContent>
-        </Card>
+        <KpiCard title="Total Unit" value={kpi.totalUnits} icon={Wrench} tone="primary" />
+        <KpiCard title="Tersedia" value={kpi.available} icon={CheckCircle2} tone="success" />
+        <KpiCard title="Dipinjam" value={kpi.borrowed} icon={QrCode} tone="primary" />
+        <KpiCard title="Perlu Perhatian" value={kpi.issue} icon={AlertTriangle} tone="warning" />
       </div>
 
       <Card className="border-border/50 bg-card shadow-sm">
