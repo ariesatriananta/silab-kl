@@ -20,7 +20,6 @@ import {
   DialogDescription,
   DialogHeader,
   DialogTitle,
-  DialogTrigger,
 } from "@/components/ui/dialog"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -291,14 +290,8 @@ export function LabUsagePageClient({
         </CardContent>
       </Card>
 
-      <div className="flex flex-wrap items-center gap-2">
+      <>
         <Dialog open={createScheduleOpen} onOpenChange={setCreateScheduleOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="size-4" />
-              Tambah Jadwal
-            </Button>
-          </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Tambah Jadwal Lab</DialogTitle>
@@ -383,12 +376,6 @@ export function LabUsagePageClient({
         </Dialog>
 
         <Dialog open={createUsageOpen} onOpenChange={setCreateUsageOpen}>
-          <DialogTrigger asChild>
-            <Button variant="outline">
-              <Plus className="size-4" />
-              Catat Penggunaan Lab
-            </Button>
-          </DialogTrigger>
           <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
             <DialogHeader>
               <DialogTitle>Catat Riwayat Penggunaan Lab</DialogTitle>
@@ -527,7 +514,7 @@ export function LabUsagePageClient({
             </form>
           </DialogContent>
         </Dialog>
-      </div>
+      </>
 
       <Tabs
         value={activeTab}

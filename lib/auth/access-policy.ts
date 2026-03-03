@@ -20,6 +20,7 @@ export function getDashboardAccessRedirect(input: DashboardRedirectInput): strin
     if (pathname === "/dashboard") return "/dashboard/student-tools"
     const mahasiswaAllowedPaths = new Set([
       "/dashboard/student-tools",
+      "/dashboard/student-lab-schedule",
       "/dashboard/borrowing",
       "/dashboard/account/profile",
       "/dashboard/account/security",

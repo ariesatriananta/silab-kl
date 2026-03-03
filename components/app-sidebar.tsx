@@ -50,9 +50,12 @@ const mainNavItems: Array<{
 const studentNavItems: Array<{
   title: string
   href: string
-  icon: typeof GraduationCap
+  icon: typeof LayoutDashboard
   roles: Role[]
-}> = [{ title: "Katalog Alat", href: "/dashboard/student-tools", icon: GraduationCap, roles: ["mahasiswa"] }]
+}> = [
+  { title: "Katalog Alat", href: "/dashboard/student-tools", icon: GraduationCap, roles: ["mahasiswa"] },
+  { title: "Jadwal Lab", href: "/dashboard/student-lab-schedule", icon: CalendarDays, roles: ["mahasiswa"] },
+]
 
 export function AppSidebar() {
   const pathname = usePathname()

@@ -37,6 +37,14 @@ test("RBAC route guard: mahasiswa diarahkan ke student-tools kecuali halaman yan
   assert.equal(
     getDashboardAccessRedirect({
       role: "mahasiswa",
+      pathname: "/dashboard/student-lab-schedule",
+      mustChangePassword: false,
+    }),
+    null,
+  )
+  assert.equal(
+    getDashboardAccessRedirect({
+      role: "mahasiswa",
       pathname: "/dashboard/account/profile",
       mustChangePassword: false,
     }),
