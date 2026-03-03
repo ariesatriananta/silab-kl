@@ -38,6 +38,8 @@ async function getConsumablesData(
   role: Role,
   userId: string,
   accessibleLabIds: string[] | null,
+  movementSourceFilter: string | null,
+  movementLabFilter: string | null,
   paging: { requestPage: number; requestPageSize: number; movementPage: number; movementPageSize: number },
 ) {
   const stockWhere =
@@ -58,8 +60,34 @@ async function getConsumablesData(
 
   const requestOffset = (paging.requestPage - 1) * paging.requestPageSize
   const movementOffset = (paging.movementPage - 1) * paging.movementPageSize
+  const movementSourceExpr = sql<string>`
+    case
+      when ${consumableStockMovements.note} like '% | %' then split_part(${consumableStockMovements.note}, ' | ', 1)
+      when lower(${consumableStockMovements.note}) like 'sumber:%' then btrim(substr(${consumableStockMovements.note}, 8))
+      else null
+    end
+  `
+  const movementSourceWhere =
+    movementSourceFilter && movementSourceFilter !== "all"
+      ? sql`(
+          ${consumableStockMovements.note} ilike ${`${movementSourceFilter} | %`}
+          or ${consumableStockMovements.note} ilike ${`Sumber: ${movementSourceFilter}`}
+        )`
+      : undefined
+  const movementLabWhere =
+    movementLabFilter && movementLabFilter !== "all" ? eq(consumableItems.labId, movementLabFilter) : undefined
 
-  const [stockRows, requestRows, requestCountRows, requestLineRows, labRows, createItemRows, movementRows, movementCountRows] = await Promise.all([
+  const [
+    stockRows,
+    requestRows,
+    requestCountRows,
+    requestLineRows,
+    labRows,
+    createItemRows,
+    movementRows,
+    movementCountRows,
+    movementSourceRows,
+  ] = await Promise.all([
     db
       .select({
         id: consumableItems.id,
@@ -163,7 +191,7 @@ async function getConsumablesData(
       .innerJoin(consumableItems, eq(consumableItems.id, consumableStockMovements.consumableItemId))
       .innerJoin(labs, eq(labs.id, consumableItems.labId))
       .leftJoin(users, eq(users.id, consumableStockMovements.actorUserId))
-      .where(stockWhere)
+      .where(and(stockWhere, movementSourceWhere, movementLabWhere))
       .orderBy(desc(consumableStockMovements.createdAt))
       .limit(paging.movementPageSize)
       .offset(movementOffset),
@@ -171,7 +199,14 @@ async function getConsumablesData(
       .select({ total: sql<number>`count(*)` })
       .from(consumableStockMovements)
       .innerJoin(consumableItems, eq(consumableItems.id, consumableStockMovements.consumableItemId))
-      .where(stockWhere),
+      .where(and(stockWhere, movementSourceWhere, movementLabWhere)),
+    db
+      .selectDistinct({
+        source: movementSourceExpr,
+      })
+      .from(consumableStockMovements)
+      .innerJoin(consumableItems, eq(consumableItems.id, consumableStockMovements.consumableItemId))
+      .where(and(stockWhere, sql`${movementSourceExpr} is not null`, sql`${movementSourceExpr} <> ''`)),
   ])
 
   const consumables: ConsumableStockRow[] = stockRows.map((row) => ({
@@ -243,6 +278,10 @@ async function getConsumablesData(
   const requestTotalPages = Math.max(1, Math.ceil(requestTotalItems / paging.requestPageSize))
   const movementTotalItems = Number(movementCountRows[0]?.total ?? 0)
   const movementTotalPages = Math.max(1, Math.ceil(movementTotalItems / paging.movementPageSize))
+  const movementSourceOptions = movementSourceRows
+    .map((row) => row.source)
+    .filter((source): source is string => Boolean(source && source.trim()))
+    .sort((a, b) => a.localeCompare(b, "id-ID"))
 
   return {
     consumables,
@@ -250,6 +289,7 @@ async function getConsumablesData(
     createLabs,
     createItems,
     stockMovementRows,
+    movementSourceOptions,
     pagination: {
       requests: {
         page: Math.min(paging.requestPage, requestTotalPages),
@@ -285,11 +325,16 @@ export default async function ConsumablesPage({
   }
   const requestPage = Math.max(1, Number.parseInt(getSingle("reqPage") ?? "1", 10) || 1)
   const movementPage = Math.max(1, Number.parseInt(getSingle("movPage") ?? "1", 10) || 1)
+  const movementSourceFilter = getSingle("movSource")?.trim() || "all"
+  const movementLabFilter = getSingle("movLab")?.trim() || "all"
 
-  const { consumables, requests, createLabs, createItems, stockMovementRows, pagination } = await getConsumablesData(
+  const { consumables, requests, createLabs, createItems, stockMovementRows, movementSourceOptions, pagination } =
+    await getConsumablesData(
     role,
     session.user.id,
     accessibleLabIds,
+    movementSourceFilter,
+    movementLabFilter,
     { requestPage, requestPageSize: 20, movementPage, movementPageSize: 50 },
   )
 
@@ -300,6 +345,10 @@ export default async function ConsumablesPage({
       consumables={consumables}
       materialRequests={requests}
       stockMovements={stockMovementRows}
+      movementSourceFilter={movementSourceFilter}
+      movementSourceOptions={movementSourceOptions}
+      movementLabFilter={movementLabFilter}
+      movementLabOptions={createLabs}
       masterLabs={createLabs}
       createOptions={{ labs: createLabs, items: createItems }}
       pagination={pagination}

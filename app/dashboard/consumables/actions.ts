@@ -19,6 +19,7 @@ import { writeSecurityAuditLog } from "@/lib/security/audit"
 export type MaterialRequestActionResult = { ok: boolean; message: string }
 export type ConsumableMasterActionResult = { ok: boolean; message: string }
 export type ConsumableStockInActionResult = { ok: boolean; message: string }
+const MATERIAL_REQUESTS_ENABLED = false
 
 const createMaterialRequestSchema = z.object({
   labId: z.string().uuid(),
@@ -83,6 +84,27 @@ function movementNote(base: string | undefined, source: string | undefined) {
   return note || null
 }
 
+function isNeonHttpNoTransactionError(error: unknown) {
+  return error instanceof Error && error.message.toLowerCase().includes("no transactions support in neon-http driver")
+}
+
+function toActionErrorMessage(error: unknown, fallback: string) {
+  if (!(error instanceof Error) || !error.message) return fallback
+  if (isNeonHttpNoTransactionError(error)) return `${fallback} Driver DB tidak mendukung transaksi pada mode ini.`
+  return error.message
+}
+
+async function runDbUnit<T>(work: (executor: typeof db) => Promise<T>) {
+  try {
+    return await db.transaction(async (tx) => work(tx as unknown as typeof db))
+  } catch (error) {
+    if (isNeonHttpNoTransactionError(error)) {
+      return await work(db)
+    }
+    throw error
+  }
+}
+
 async function getActor() {
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) return { error: "Sesi tidak valid." as const }
@@ -137,6 +159,12 @@ export async function createMaterialRequestAction(
   _prev: MaterialRequestActionResult | null,
   formData: FormData,
 ): Promise<MaterialRequestActionResult> {
+  if (!MATERIAL_REQUESTS_ENABLED) {
+    return {
+      ok: false,
+      message: "Permintaan bahan terpisah dinonaktifkan. Gunakan modul Peminjaman untuk alur pengajuan.",
+    }
+  }
   const actor = await getActor()
   if ("error" in actor) return { ok: false, message: actor.error ?? "Sesi tidak valid." }
   const { session } = actor
@@ -176,7 +204,7 @@ export async function createMaterialRequestAction(
   }
 
   try {
-    await db.transaction(async (tx) => {
+    await runDbUnit(async (tx) => {
       const [inserted] = await tx
         .insert(materialRequests)
         .values({
@@ -246,7 +274,7 @@ export async function createConsumableMasterAction(
   if ("error" in auth) return { ok: false, message: auth.error ?? "Akses ditolak." }
 
   try {
-    await db.transaction(async (tx) => {
+    await runDbUnit(async (tx) => {
       const [inserted] = await tx
         .insert(consumableItems)
         .values({
@@ -280,7 +308,7 @@ export async function createConsumableMasterAction(
       (error.message.includes("consumable_items_code_uq") || error.message.includes("duplicate"))
     return {
       ok: false,
-      message: duplicate ? "Kode bahan sudah digunakan." : "Gagal menambahkan master bahan.",
+      message: duplicate ? "Kode bahan sudah digunakan." : toActionErrorMessage(error, "Gagal menambahkan master bahan."),
     }
   }
 
@@ -334,7 +362,7 @@ export async function updateConsumableMasterAction(
   }
 
   try {
-    await db.transaction(async (tx) => {
+    await runDbUnit(async (tx) => {
       await tx
         .update(consumableItems)
         .set({
@@ -370,7 +398,7 @@ export async function updateConsumableMasterAction(
       (error.message.includes("consumable_items_code_uq") || error.message.includes("duplicate"))
     return {
       ok: false,
-      message: duplicate ? "Kode bahan sudah digunakan." : "Gagal memperbarui master bahan.",
+      message: duplicate ? "Kode bahan sudah digunakan." : toActionErrorMessage(error, "Gagal memperbarui master bahan."),
     }
   }
 
@@ -412,7 +440,7 @@ export async function stockInConsumableAction(
   if ("error" in auth) return { ok: false, message: auth.error ?? "Akses ditolak." }
 
   try {
-    await db.transaction(async (tx) => {
+    await runDbUnit(async (tx) => {
       const before = existing.stockQty
       const after = before + parsed.data.qtyIn
       await tx
@@ -446,7 +474,7 @@ export async function stockInConsumableAction(
       targetType: "consumable_item",
       targetId: existing.id,
     })
-    return { ok: false, message: "Gagal memproses stok masuk." }
+    return { ok: false, message: toActionErrorMessage(error, "Gagal memproses stok masuk.") }
   }
 
   await writeSecurityAuditLog({
@@ -541,6 +569,12 @@ export async function approveMaterialRequestWithFeedbackAction(
   _prev: MaterialRequestActionResult | null,
   formData: FormData,
 ): Promise<MaterialRequestActionResult> {
+  if (!MATERIAL_REQUESTS_ENABLED) {
+    return {
+      ok: false,
+      message: "Permintaan bahan terpisah dinonaktifkan.",
+    }
+  }
   const parsed = processMaterialRequestSchema.safeParse({
     requestId: formData.get("requestId"),
     note: formData.get("note")?.toString() || undefined,
@@ -583,6 +617,12 @@ export async function rejectMaterialRequestWithFeedbackAction(
   _prev: MaterialRequestActionResult | null,
   formData: FormData,
 ): Promise<MaterialRequestActionResult> {
+  if (!MATERIAL_REQUESTS_ENABLED) {
+    return {
+      ok: false,
+      message: "Permintaan bahan terpisah dinonaktifkan.",
+    }
+  }
   const parsed = processMaterialRequestSchema.safeParse({
     requestId: formData.get("requestId"),
     note: formData.get("note")?.toString() || undefined,
@@ -625,6 +665,12 @@ export async function fulfillMaterialRequestWithFeedbackAction(
   _prev: MaterialRequestActionResult | null,
   formData: FormData,
 ): Promise<MaterialRequestActionResult> {
+  if (!MATERIAL_REQUESTS_ENABLED) {
+    return {
+      ok: false,
+      message: "Permintaan bahan terpisah dinonaktifkan.",
+    }
+  }
   const parsed = processMaterialRequestSchema.safeParse({
     requestId: formData.get("requestId"),
     note: formData.get("note")?.toString() || undefined,
@@ -639,7 +685,7 @@ export async function fulfillMaterialRequestWithFeedbackAction(
   }
 
   try {
-    await db.transaction(async (tx) => {
+    await runDbUnit(async (tx) => {
       const lines = await tx
         .select({
           id: materialRequestItems.id,

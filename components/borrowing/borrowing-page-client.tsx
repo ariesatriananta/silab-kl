@@ -1273,10 +1273,10 @@ export function BorrowingPageClient({
 
       <div className={`grid gap-3 ${role === "mahasiswa" ? "" : "lg:grid-cols-[1fr_320px]"}`}>
         <div className="grid flex-1 grid-cols-2 gap-3 sm:grid-cols-4">
-          <KpiCard title="Pending" value={summary.pending} icon={Clock} tone="warning" />
-          <KpiCard title="Aktif" value={summary.active} icon={Package} tone="primary" />
-          <KpiCard title="Terlambat" value={summary.overdue} icon={XCircle} tone="destructive" />
-          <KpiCard title="Dikembalikan" value={summary.completed} icon={CheckCircle2} tone="success" />
+          <KpiCard className="p-2" title="Pending" value={summary.pending} icon={Clock} tone="warning" />
+          <KpiCard className="p-2" title="Aktif" value={summary.active} icon={Package} tone="primary" />
+          <KpiCard className="p-2" title="Terlambat" value={summary.overdue} icon={XCircle} tone="destructive" />
+          <KpiCard className="p-2" title="Dikembalikan" value={summary.completed} icon={CheckCircle2} tone="success" />
         </div>
       </div>
 

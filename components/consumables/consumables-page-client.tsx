@@ -1,7 +1,7 @@
 "use client"
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
-import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react"
+import { useActionState, useDeferredValue, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import { AlertTriangle, CheckCircle2, Eye, Package, Plus, TrendingDown, XCircle } from "lucide-react"
 
 import {
@@ -109,6 +109,12 @@ export type ConsumableStockMovementRow = {
   actorName: string
   createdAt: string
 }
+const MATERIAL_REQUESTS_ENABLED = false
+
+type ParsedConsumableStockMovementRow = ConsumableStockMovementRow & {
+  source: string
+  noteText: string | null
+}
 
 const requestStatusConfig: Record<MaterialRequestRow["status"], { label: string; className: string }> = {
   pending: { label: "Menunggu", className: "rounded-full bg-warning/10 text-warning-foreground border-warning/20" },
@@ -125,12 +131,32 @@ const stockMovementTypeLabel: Record<ConsumableStockMovementRow["movementType"],
   manual_adjustment: "Koreksi Manual",
 }
 
+function parseMovementSource(note: string | null): { source: string; noteText: string | null } {
+  if (!note?.trim()) return { source: "-", noteText: null }
+  const raw = note.trim()
+  const separator = " | "
+  if (raw.includes(separator)) {
+    const [left, ...rest] = raw.split(separator)
+    const source = left?.trim() || "-"
+    const noteText = rest.join(separator).trim() || null
+    return { source, noteText }
+  }
+  if (raw.toLowerCase().startsWith("sumber:")) {
+    return { source: raw.slice(7).trim() || "-", noteText: null }
+  }
+  return { source: "-", noteText: raw }
+}
+
 export function ConsumablesPageClient({
   role,
   currentUserId,
   consumables,
   materialRequests,
   stockMovements,
+  movementSourceFilter,
+  movementSourceOptions,
+  movementLabFilter,
+  movementLabOptions,
   masterLabs,
   createOptions,
   pagination,
@@ -140,6 +166,10 @@ export function ConsumablesPageClient({
   consumables: ConsumableStockRow[]
   materialRequests: MaterialRequestRow[]
   stockMovements: ConsumableStockMovementRow[]
+  movementSourceFilter: string
+  movementSourceOptions: string[]
+  movementLabFilter: string
+  movementLabOptions: ConsumableCreateLabOption[]
   masterLabs: ConsumableCreateLabOption[]
   createOptions: {
     labs: ConsumableCreateLabOption[]
@@ -163,6 +193,9 @@ export function ConsumablesPageClient({
   const [requestStatusFilter, setRequestStatusFilter] = useState<
     "all" | MaterialRequestRow["status"] | "needs_action"
   >("all")
+  const [stockQuery, setStockQuery] = useState("")
+  const deferredStockQuery = useDeferredValue(stockQuery)
+  const [stockLabFilter, setStockLabFilter] = useState<string>("all")
   const [selectedLabId, setSelectedLabId] = useState(createOptions.labs[0]?.id ?? "")
   const [qtyMap, setQtyMap] = useState<Record<string, number>>({})
   const [requestNote, setRequestNote] = useState("")
@@ -218,11 +251,40 @@ export function ConsumablesPageClient({
     rejected: materialRequests.filter((r) => r.status === "rejected").length,
     needsAction: materialRequests.filter((r) => ["pending", "approved"].includes(r.status)).length,
   }
+  const totalStockQty = useMemo(() => consumables.reduce((sum, item) => sum + item.stock, 0), [consumables])
   const filteredMaterialRequests = materialRequests.filter((req) => {
     if (requestStatusFilter === "all") return true
     if (requestStatusFilter === "needs_action") return req.status === "pending" || req.status === "approved"
     return req.status === requestStatusFilter
   })
+  const stockLabOptions = useMemo(
+    () =>
+      Array.from(new Set(consumables.map((item) => item.lab)))
+        .filter(Boolean)
+        .sort((a, b) => a.localeCompare(b, "id-ID")),
+    [consumables],
+  )
+  const filteredConsumables = useMemo(() => {
+    const keyword = deferredStockQuery.trim().toLowerCase()
+    return consumables.filter((item) => {
+      const matchesLab = stockLabFilter === "all" || item.lab === stockLabFilter
+      if (!matchesLab) return false
+      if (!keyword) return true
+      return item.name.toLowerCase().includes(keyword) || item.category.toLowerCase().includes(keyword)
+    })
+  }, [consumables, deferredStockQuery, stockLabFilter])
+  const parsedStockMovements = useMemo<ParsedConsumableStockMovementRow[]>(
+    () =>
+      stockMovements.map((movement) => {
+        const parsed = parseMovementSource(movement.note)
+        return {
+          ...movement,
+          source: parsed.source,
+          noteText: parsed.noteText,
+        }
+      }),
+    [stockMovements],
+  )
   const createItemsForLab = useMemo(
     () => createOptions.items.filter((item) => item.labId === selectedLabId),
     [createOptions.items, selectedLabId],
@@ -242,6 +304,28 @@ export function ConsumablesPageClient({
     const key = kind === "requests" ? "reqPage" : "movPage"
     if (page > 1) params.set(key, String(page))
     else params.delete(key)
+    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    startPagingTransition(() => {
+      router.replace(target, { scroll: false })
+    })
+  }
+
+  const handleMovementSourceFilterChange = (source: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (source === "all") params.delete("movSource")
+    else params.set("movSource", source)
+    params.delete("movPage")
+    const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
+    startPagingTransition(() => {
+      router.replace(target, { scroll: false })
+    })
+  }
+
+  const handleMovementLabFilterChange = (labId: string) => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (labId === "all") params.delete("movLab")
+    else params.set("movLab", labId)
+    params.delete("movPage")
     const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
     startPagingTransition(() => {
       router.replace(target, { scroll: false })
@@ -350,17 +434,6 @@ export function ConsumablesPageClient({
           </p>
         </div>
         <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
-          <Button
-            type="button"
-            variant={activeTab === "requests" ? "default" : "outline"}
-            onClick={() => {
-              setActiveTab("requests")
-              setCreateOpen(true)
-            }}
-          >
-            <Plus className="size-4" />
-            Buat Permintaan Bahan
-          </Button>
           {canProcess && (
             <Button
               type="button"
@@ -378,8 +451,8 @@ export function ConsumablesPageClient({
       </div>
 
       {lowStockItems.length > 0 && (
-        <Card className="border-warning/20 bg-warning/5 shadow-sm">
-          <CardContent className="flex items-center gap-3 p-4">
+        <Card className="border-warning/20 bg-warning/5 shadow-sm py-2">
+          <CardContent className="flex items-center gap-3 p-2">
             <AlertTriangle className="size-5 shrink-0 text-warning-foreground" />
             <div>
               <p className="text-sm font-medium text-foreground">Peringatan Stok Rendah</p>
@@ -396,16 +469,18 @@ export function ConsumablesPageClient({
           <CardTitle className="text-base font-semibold text-card-foreground">Butuh Tindakan</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
-          <ActionKpiTile
-            title="Permintaan Butuh Tindakan"
-            metric={requestSummary.needsAction}
-            description="Menunggu persetujuan / siap dipenuhi"
-            tone="primary"
-            onClick={() => {
-              setActiveTab("requests")
-              setRequestStatusFilter("needs_action")
-            }}
-          />
+          {MATERIAL_REQUESTS_ENABLED && (
+            <ActionKpiTile
+              title="Permintaan Butuh Tindakan"
+              metric={requestSummary.needsAction}
+              description="Menunggu persetujuan / siap dipenuhi"
+              tone="primary"
+              onClick={() => {
+                setActiveTab("requests")
+                setRequestStatusFilter("needs_action")
+              }}
+            />
+          )}
           <ActionKpiTile
             title="Stok Rendah"
             metric={lowStockItems.length}
@@ -414,13 +489,12 @@ export function ConsumablesPageClient({
             onClick={() => setActiveTab("stock")}
           />
           <ActionKpiTile
-            title="Permintaan Menunggu"
-            metric={requestSummary.pending}
-            description="Belum diproses"
+            title={MATERIAL_REQUESTS_ENABLED ? "Permintaan Menunggu" : "Master Bahan Aktif"}
+            metric={MATERIAL_REQUESTS_ENABLED ? requestSummary.pending : consumables.length}
+            description={MATERIAL_REQUESTS_ENABLED ? "Belum diproses" : "Jumlah bahan aktif terdaftar"}
             tone="muted"
             onClick={() => {
-              setActiveTab("requests")
-              setRequestStatusFilter("pending")
+              setActiveTab("stock")
             }}
           />
           <ActionKpiTile
@@ -430,18 +504,19 @@ export function ConsumablesPageClient({
             tone="muted"
             onClick={() => setActiveTab("movements")}
           />
+          <ActionKpiTile
+            title="Total Stok"
+            metric={totalStockQty}
+            description="Akumulasi unit/qty bahan aktif"
+            tone="muted"
+            onClick={() => setActiveTab("stock")}
+          />
         </CardContent>
       </Card>
 
       <div className="flex flex-wrap justify-end gap-2">
         {canProcess && (
           <Dialog open={createMasterOpen} onOpenChange={setCreateMasterOpen}>
-            <DialogTrigger asChild>
-              <Button variant="outline">
-                <Plus className="size-4" />
-                Tambah Master Bahan
-              </Button>
-            </DialogTrigger>
             <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
               <DialogHeader>
                 <DialogTitle>Tambah Master Bahan</DialogTitle>
@@ -503,82 +578,84 @@ export function ConsumablesPageClient({
           </Dialog>
         )}
 
-        <Dialog open={createOpen} onOpenChange={setCreateOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <Plus className="size-4" />
-              Buat Permintaan Bahan
-            </Button>
-          </DialogTrigger>
-          <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
-            <DialogHeader>
-              <DialogTitle>Buat Permintaan Bahan</DialogTitle>
-              <DialogDescription>
-                Pilih laboratorium dan isi qty bahan yang diminta (&gt; 0).
-              </DialogDescription>
-            </DialogHeader>
-            <form action={createAction} className="grid gap-4">
-              {createState && (
-                <div className={`rounded-xl border px-3 py-2 text-sm ${createState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
-                  {createState.message}
+        {MATERIAL_REQUESTS_ENABLED && (
+          <Dialog open={createOpen} onOpenChange={setCreateOpen}>
+            <DialogTrigger asChild>
+              <Button>
+                <Plus className="size-4" />
+                Buat Permintaan Bahan
+              </Button>
+            </DialogTrigger>
+            <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
+              <DialogHeader>
+                <DialogTitle>Buat Permintaan Bahan</DialogTitle>
+                <DialogDescription>
+                  Pilih laboratorium dan isi qty bahan yang diminta (&gt; 0).
+                </DialogDescription>
+              </DialogHeader>
+              <form action={createAction} className="grid gap-4">
+                {createState && (
+                  <div className={`rounded-xl border px-3 py-2 text-sm ${createState.ok ? "border-success/20 bg-success/5 text-success-foreground" : "border-destructive/20 bg-destructive/5 text-destructive"}`}>
+                    {createState.message}
+                  </div>
+                )}
+                <div className="grid gap-2">
+                  <Label>Laboratorium</Label>
+                  <Select name="labId" value={selectedLabId} onValueChange={handleLabChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Pilih lab" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {createOptions.labs.map((lab) => (
+                        <SelectItem key={lab.id} value={lab.id}>
+                          {lab.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-              )}
-              <div className="grid gap-2">
-                <Label>Laboratorium</Label>
-                <Select name="labId" value={selectedLabId} onValueChange={handleLabChange}>
-                  <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Pilih lab" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {createOptions.labs.map((lab) => (
-                      <SelectItem key={lab.id} value={lab.id}>
-                        {lab.name}
-                      </SelectItem>
+                <div className="grid gap-2">
+                  <Label>Item Bahan</Label>
+                  <div className="max-h-64 space-y-2 overflow-auto rounded-md border border-border p-3">
+                    {createItemsForLab.length === 0 && (
+                      <p className="text-sm text-muted-foreground">Tidak ada bahan tersedia untuk lab ini.</p>
+                    )}
+                    {createItemsForLab.map((item) => (
+                      <div key={item.id} className="grid grid-cols-[1fr_90px] items-center gap-3">
+                        <p className="text-sm text-foreground">{item.label}</p>
+                        <Input
+                          type="number"
+                          min={0}
+                          value={qtyMap[item.id] ?? 0}
+                          onChange={(e) => setQty(item.id, Number(e.target.value))}
+                        />
+                      </div>
                     ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="grid gap-2">
-                <Label>Item Bahan</Label>
-                <div className="max-h-64 space-y-2 overflow-auto rounded-md border border-border p-3">
-                  {createItemsForLab.length === 0 && (
-                    <p className="text-sm text-muted-foreground">Tidak ada bahan tersedia untuk lab ini.</p>
-                  )}
-                  {createItemsForLab.map((item) => (
-                    <div key={item.id} className="grid grid-cols-[1fr_90px] items-center gap-3">
-                      <p className="text-sm text-foreground">{item.label}</p>
-                      <Input
-                        type="number"
-                        min={0}
-                        value={qtyMap[item.id] ?? 0}
-                        onChange={(e) => setQty(item.id, Number(e.target.value))}
-                      />
-                    </div>
-                  ))}
+                  </div>
                 </div>
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="materialRequestNote">Catatan (opsional)</Label>
-                <Textarea
-                  id="materialRequestNote"
-                  name="note"
-                  value={requestNote}
-                  onChange={(e) => setRequestNote(e.target.value)}
-                  maxLength={500}
-                />
-              </div>
-              <input type="hidden" name="itemsPayload" value={itemsPayload} />
-              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
-                <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
-                  Batal
-                </Button>
-                <Button type="submit" disabled={createPending}>
-                  {createPending ? "Mengirim..." : "Kirim Permintaan"}
-                </Button>
-              </div>
-            </form>
-          </DialogContent>
-        </Dialog>
+                <div className="grid gap-2">
+                  <Label htmlFor="materialRequestNote">Catatan (opsional)</Label>
+                  <Textarea
+                    id="materialRequestNote"
+                    name="note"
+                    value={requestNote}
+                    onChange={(e) => setRequestNote(e.target.value)}
+                    maxLength={500}
+                  />
+                </div>
+                <input type="hidden" name="itemsPayload" value={itemsPayload} />
+                <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                  <Button type="button" variant="outline" onClick={() => setCreateOpen(false)}>
+                    Batal
+                  </Button>
+                  <Button type="submit" disabled={createPending}>
+                    {createPending ? "Mengirim..." : "Kirim Permintaan"}
+                  </Button>
+                </div>
+              </form>
+            </DialogContent>
+          </Dialog>
+        )}
       </div>
 
       <Tabs
@@ -586,19 +663,21 @@ export function ConsumablesPageClient({
         onValueChange={(v) => setActiveTab(v as "stock" | "requests" | "movements")}
         className="flex flex-col gap-4"
       >
-        <TabsList className="grid h-12 w-full grid-cols-3 items-stretch gap-1 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-1 md:w-auto">
+        <TabsList className={`grid h-12 w-full items-stretch gap-1 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-1 md:w-auto ${MATERIAL_REQUESTS_ENABLED ? "grid-cols-3" : "grid-cols-2"}`}>
           <TabsTrigger
             value="stock"
             className="h-full w-full rounded-xl border border-transparent bg-transparent px-2 py-0 text-xs font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
           >
             Stok Aktif
           </TabsTrigger>
-          <TabsTrigger
-            value="requests"
-            className="h-full w-full rounded-xl border border-transparent bg-transparent px-2 py-0 text-xs font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
-          >
-            Permintaan Bahan
-          </TabsTrigger>
+          {MATERIAL_REQUESTS_ENABLED && (
+            <TabsTrigger
+              value="requests"
+              className="h-full w-full rounded-xl border border-transparent bg-transparent px-2 py-0 text-xs font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
+            >
+              Permintaan Bahan
+            </TabsTrigger>
+          )}
           <TabsTrigger
             value="movements"
             className="h-full w-full rounded-xl border border-transparent bg-transparent px-2 py-0 text-xs font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm sm:text-sm"
@@ -611,8 +690,41 @@ export function ConsumablesPageClient({
           <div className="rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             Fokus tab ini: cek stok aktif, stok minimum, lalu lakukan <span className="font-medium text-foreground">Stok Masuk</span> atau <span className="font-medium text-foreground">Edit Master</span>.
           </div>
+          <Card className="border-border/50 bg-card shadow-sm py-2">
+            <CardContent className="grid gap-3 p-4 sm:grid-cols-[1fr_260px]">
+              <div className="grid gap-2">
+                <Label htmlFor="stockSearch">Cari Nama / Kategori</Label>
+                <Input
+                  id="stockSearch"
+                  value={stockQuery}
+                  onChange={(event) => setStockQuery(event.target.value)}
+                  placeholder="Contoh: EDTA, filter paper, glassware..."
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label>Laboratorium</Label>
+                <Select value={stockLabFilter} onValueChange={setStockLabFilter}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Semua Lab" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Semua Lab</SelectItem>
+                    {stockLabOptions.map((labName) => (
+                      <SelectItem key={labName} value={labName}>
+                        {labName}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-xs text-muted-foreground sm:col-span-2">
+                Menampilkan <span className="font-medium text-foreground">{filteredConsumables.length}</span> dari{" "}
+                {consumables.length} bahan aktif.
+              </p>
+            </CardContent>
+          </Card>
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
-            {consumables.map((item) => {
+            {filteredConsumables.map((item) => {
               const isLow = item.stock <= item.minStock
               const denominator = Math.max(item.minStock * 3, 1)
               const stockPercentage = Math.min((item.stock / denominator) * 100, 100)
@@ -677,10 +789,26 @@ export function ConsumablesPageClient({
                 </Card>
               )
             })}
+            {filteredConsumables.length === 0 && (
+              <div className="sm:col-span-2 xl:col-span-4">
+                <Empty className="border border-border/50 bg-muted/20 py-8">
+                  <EmptyHeader>
+                    <EmptyMedia variant="icon">
+                      <Package className="size-5" />
+                    </EmptyMedia>
+                    <EmptyTitle className="text-base">Tidak ada bahan sesuai filter</EmptyTitle>
+                    <EmptyDescription>
+                      Ubah kata kunci pencarian atau pilih laboratorium lain.
+                    </EmptyDescription>
+                  </EmptyHeader>
+                </Empty>
+              </div>
+            )}
           </div>
         </TabsContent>
 
-        <TabsContent value="requests" className="mt-0">
+        {MATERIAL_REQUESTS_ENABLED && (
+          <TabsContent value="requests" className="mt-0">
           <div className="mb-4 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
             Fokus tab ini: proses workflow permintaan bahan (approve/reject/fulfill). Gunakan filter cepat untuk mengurangi kepadatan tabel.
           </div>
@@ -858,7 +986,8 @@ export function ConsumablesPageClient({
               </div>
             </CardContent>
           </Card>
-        </TabsContent>
+          </TabsContent>
+        )}
 
         <TabsContent value="movements" className="mt-0">
           <div className="mb-4 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
@@ -877,14 +1006,49 @@ export function ConsumablesPageClient({
               <div className="px-6 pb-2 text-xs text-muted-foreground">
                 Geser tabel ke samping pada layar kecil untuk melihat detail perubahan stok, petugas, dan nilai sebelum/sesudah.
               </div>
+              <div className="grid gap-3 px-6 pb-3 sm:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label className="text-xs text-muted-foreground">Filter Sumber</Label>
+                  <Select value={movementSourceFilter} onValueChange={handleMovementSourceFilterChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Semua Sumber" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Sumber</SelectItem>
+                      {movementSourceOptions.map((source) => (
+                        <SelectItem key={source} value={source}>
+                          {source}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="grid gap-2">
+                  <Label className="text-xs text-muted-foreground">Filter Lab</Label>
+                  <Select value={movementLabFilter} onValueChange={handleMovementLabFilterChange}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Semua Lab" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="all">Semua Lab</SelectItem>
+                      {movementLabOptions.map((lab) => (
+                        <SelectItem key={lab.id} value={lab.id}>
+                          {lab.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
               <div className="w-full overflow-x-auto">
-                <Table className="min-w-[1100px]">
+                <Table className="min-w-[1180px]">
                   <TableHeader>
                     <TableRow className="bg-muted/50">
                       <TableHead>Waktu</TableHead>
                       <TableHead>Bahan</TableHead>
                       <TableHead>Lab</TableHead>
                       <TableHead>Tipe</TableHead>
+                      <TableHead>Sumber</TableHead>
                       <TableHead className="text-right">Delta</TableHead>
                       <TableHead className="text-right">Sebelum</TableHead>
                       <TableHead className="text-right">Sesudah</TableHead>
@@ -892,9 +1056,9 @@ export function ConsumablesPageClient({
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {stockMovements.length === 0 && (
+                    {parsedStockMovements.length === 0 && (
                       <TableRow>
-                        <TableCell colSpan={8} className="py-6">
+                        <TableCell colSpan={9} className="py-6">
                           <Empty className="border border-border/50 bg-muted/20 py-8">
                             <EmptyHeader>
                               <EmptyMedia variant="icon">
@@ -909,7 +1073,7 @@ export function ConsumablesPageClient({
                         </TableCell>
                       </TableRow>
                     )}
-                    {stockMovements.map((m) => (
+                    {parsedStockMovements.map((m) => (
                       <TableRow key={m.id} className="hover:bg-muted/30">
                         <TableCell className="text-xs text-muted-foreground">
                           {new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeStyle: "short" }).format(new Date(m.createdAt))}
@@ -917,13 +1081,14 @@ export function ConsumablesPageClient({
                         <TableCell>
                           <div className="max-w-[260px]">
                             <p className="text-sm text-foreground">{m.consumableName}</p>
-                            <p className="truncate text-xs text-muted-foreground">{m.note ?? "-"}</p>
+                            <p className="truncate text-xs text-muted-foreground">{m.noteText ?? "-"}</p>
                           </div>
                         </TableCell>
                         <TableCell className="text-muted-foreground">{m.labName}</TableCell>
                         <TableCell className="text-xs text-muted-foreground">
                           {stockMovementTypeLabel[m.movementType]}
                         </TableCell>
+                        <TableCell className="text-xs text-muted-foreground">{m.source}</TableCell>
                         <TableCell className={`text-right font-medium ${m.qtyDelta >= 0 ? "text-success-foreground" : "text-destructive"}`}>
                           {m.qtyDelta >= 0 ? "+" : ""}{m.qtyDelta} {m.unit}
                         </TableCell>
@@ -937,8 +1102,8 @@ export function ConsumablesPageClient({
               </div>
               <div className="flex flex-col gap-3 border-t border-border/50 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <p className="text-xs text-muted-foreground">
-                  Menampilkan {(pagination.movements.page - 1) * pagination.movements.pageSize + (stockMovements.length > 0 ? 1 : 0)}-
-                  {(pagination.movements.page - 1) * pagination.movements.pageSize + stockMovements.length} dari{" "}
+                  Menampilkan {(pagination.movements.page - 1) * pagination.movements.pageSize + (parsedStockMovements.length > 0 ? 1 : 0)}-
+                  {(pagination.movements.page - 1) * pagination.movements.pageSize + parsedStockMovements.length} dari{" "}
                   {pagination.movements.totalItems} histori stok.
                 </p>
                 <div className="flex items-center gap-2">
