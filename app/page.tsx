@@ -63,10 +63,6 @@ export default function LoginPage() {
         <div className="grid w-full gap-6 lg:grid-cols-[1.1fr_0.9fr]">
           <section className="hidden rounded-3xl border border-border/40 bg-gradient-to-br from-card/90 via-card/70 to-muted/30 p-8 shadow-xl backdrop-blur md:flex md:flex-col md:justify-between">
             <div className="space-y-6">
-              <div className="inline-flex w-fit items-center gap-2 rounded-full border border-border/60 bg-background/80 px-3 py-1 text-xs font-medium text-muted-foreground">
-                <Sparkles className="size-3.5 text-primary" />
-                Sistem Informasi Laboratorium Terintegrasi
-              </div>
 
               <div className="space-y-4">
                 <Image
@@ -135,10 +131,6 @@ export default function LoginPage() {
               </div>
 
               <div className="space-y-2 text-center md:text-left">
-                <div className="inline-flex items-center gap-2 rounded-full border border-border/60 bg-muted/40 px-3 py-1 text-xs font-medium text-muted-foreground">
-                  <LogIn className="size-3.5" />
-                  Masuk ke SILAB-KL
-                </div>
                 <div>
                   <h2 className="text-2xl font-semibold tracking-tight text-foreground">Selamat datang kembali</h2>
                   <p className="mt-1 text-sm text-muted-foreground">
@@ -216,12 +208,12 @@ export default function LoginPage() {
                 </Button>
               </form>
 
-              <div className="mt-6 flex flex-col gap-2 text-center md:text-left">
-                <p className="text-xs text-muted-foreground">
+              <div className="mt-6 flex flex-col gap-0 text-center md:text-left">
+                <p className="text-xs text-muted-foreground text-center">
                   Poltekkes Kemenkes Surabaya &copy; 2026
                 </p>
-                <p className="text-xs text-muted-foreground/90">
-                  SILAB-KL • Sistem Informasi Laboratorium Jurusan Kesehatan Lingkungan
+                <p className="text-xs text-muted-foreground/90 text-center">
+                  Sistem Informasi Laboratorium Jurusan Kesehatan Lingkungan
                 </p>
               </div>
             </CardContent>
