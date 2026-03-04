@@ -20,7 +20,7 @@ const variantStyles = {
 export function StatCard({ title, value, icon: Icon, trend, variant = "default" }: StatCardProps) {
   return (
     <Card className="border-border/50 bg-gradient-to-br from-card to-muted/20 shadow-sm transition-shadow hover:shadow-md">
-      <CardContent className="flex items-start gap-2.5 p-3">
+      <CardContent className="flex items-start gap-2.5 px-3 py-0">
         <div className={cn("mt-0.5 flex size-9 shrink-0 items-center justify-center rounded-lg border border-border/40", variantStyles[variant])}>
           <Icon className="size-4" />
         </div>

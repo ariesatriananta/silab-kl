@@ -138,17 +138,6 @@ export default async function BorrowingProofPage({
     })
   }
 
-  const statusLabelMap: Record<string, string> = {
-    submitted: "Draft",
-    pending_approval: "Menunggu Approval",
-    approved_waiting_handover: "Menunggu Serah Terima",
-    active: "Aktif",
-    partially_returned: "Kembali Sebagian",
-    completed: "Dikembalikan",
-    cancelled: "Dibatalkan",
-    rejected: "Ditolak",
-  }
-
   const plpApproverName =
     approvals.find((a) => a.decision === "approved" && a.approverRole === "petugas_plp")?.approverName ?? "-"
   const dosenApproval = approvals.find((a) => a.approverRole === "dosen")

@@ -64,13 +64,9 @@ export function AppSidebar() {
 
   useEffect(() => {
     if (!pendingHref) return
-    if (pathname === pendingHref) {
-      setPendingHref(null)
-      return
-    }
     const timer = window.setTimeout(() => setPendingHref(null), 1500)
     return () => window.clearTimeout(timer)
-  }, [pathname, pendingHref])
+  }, [pendingHref])
 
   const role = (session?.user?.role as Role | undefined) ?? "mahasiswa"
   const visibleMainNav = mainNavItems.filter((item) => item.roles.includes(role))

@@ -1,7 +1,7 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { and, eq } from "drizzle-orm"
+import { and, eq, gt, lt, ne } from "drizzle-orm"
 import { z } from "zod"
 
 import { getServerAuthSession } from "@/lib/auth/server"
@@ -73,6 +73,43 @@ function parseWibDateTime(date: string, time: string) {
   return value
 }
 
+function fmtWibDateTime(date: Date) {
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    timeZone: "Asia/Jakarta",
+  }).format(date)
+}
+
+async function findOverlappingSchedule(params: {
+  labId: string
+  startAt: Date
+  endAt: Date
+  excludeScheduleId?: string
+}) {
+  const conditions = [
+    eq(labSchedules.labId, params.labId),
+    lt(labSchedules.scheduledStartAt, params.endAt),
+    gt(labSchedules.scheduledEndAt, params.startAt),
+  ]
+  if (params.excludeScheduleId) {
+    conditions.push(ne(labSchedules.id, params.excludeScheduleId))
+  }
+
+  return db.query.labSchedules.findFirst({
+    where: and(...conditions),
+    columns: {
+      id: true,
+      courseName: true,
+      groupName: true,
+      scheduledStartAt: true,
+      scheduledEndAt: true,
+    },
+  })
+}
+
 async function ensureNonMahasiswaAndLabAccess(labId: string) {
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) return { error: "Sesi tidak valid." as const }
@@ -121,6 +158,17 @@ export async function createLabScheduleAction(
   if (endAt <= startAt) return { ok: false, message: "Jam selesai harus lebih besar dari jam mulai." }
   if (parsed.data.enrolledCount > parsed.data.capacity) {
     return { ok: false, message: "Jumlah peserta terdaftar tidak boleh melebihi kapasitas." }
+  }
+  const overlap = await findOverlappingSchedule({
+    labId: parsed.data.labId,
+    startAt,
+    endAt,
+  })
+  if (overlap) {
+    return {
+      ok: false,
+      message: `Jadwal bentrok dengan "${overlap.courseName} - ${overlap.groupName}" (${fmtWibDateTime(overlap.scheduledStartAt)} - ${fmtWibDateTime(overlap.scheduledEndAt)}).`,
+    }
   }
 
   await db.insert(labSchedules).values({
@@ -191,6 +239,18 @@ export async function updateLabScheduleAction(
   if (endAt <= startAt) return { ok: false, message: "Jam selesai harus lebih besar dari jam mulai." }
   if (parsed.data.enrolledCount > parsed.data.capacity) {
     return { ok: false, message: "Jumlah peserta terdaftar tidak boleh melebihi kapasitas." }
+  }
+  const overlap = await findOverlappingSchedule({
+    labId: parsed.data.labId,
+    startAt,
+    endAt,
+    excludeScheduleId: parsed.data.scheduleId,
+  })
+  if (overlap) {
+    return {
+      ok: false,
+      message: `Jadwal bentrok dengan "${overlap.courseName} - ${overlap.groupName}" (${fmtWibDateTime(overlap.scheduledStartAt)} - ${fmtWibDateTime(overlap.scheduledEndAt)}).`,
+    }
   }
 
   await db

@@ -149,6 +149,21 @@ export function LabUsagePageClient({
     fullSchedules: schedules.filter((s) => s.enrolledCount >= s.capacity).length,
     noAttendanceLogs: history.filter((h) => h.attendance.length === 0).length,
   }
+  const scheduleTimeOptions = useMemo(() => {
+    const options: string[] = []
+    for (let hour = 0; hour < 24; hour += 1) {
+      for (const minute of [0, 15, 30, 45]) {
+        options.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`)
+      }
+    }
+    return options
+  }, [])
+  const usageTimeOptions = useMemo(() => {
+    const set = new Set(scheduleTimeOptions)
+    if (usageStartTime) set.add(usageStartTime)
+    if (usageEndTime) set.add(usageEndTime)
+    return Array.from(set).sort((a, b) => a.localeCompare(b))
+  }, [scheduleTimeOptions, usageStartTime, usageEndTime])
 
   const goToHistoryPage = (page: number) => {
     const params = new URLSearchParams(searchParams.toString())
@@ -345,11 +360,33 @@ export function LabUsagePageClient({
               <div className="grid gap-3 sm:grid-cols-4">
                 <div className="grid gap-2 sm:col-span-1">
                   <Label htmlFor="startTime">Mulai</Label>
-                  <Input id="startTime" name="startTime" type="time" required />
+                  <Select name="startTime" defaultValue="08:00">
+                    <SelectTrigger id="startTime" className="w-full">
+                      <SelectValue placeholder="Pilih jam mulai" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {scheduleTimeOptions.map((time) => (
+                        <SelectItem key={`start-${time}`} value={time}>
+                          {time}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid gap-2 sm:col-span-1">
                   <Label htmlFor="endTime">Selesai</Label>
-                  <Input id="endTime" name="endTime" type="time" required />
+                  <Select name="endTime" defaultValue="10:00">
+                    <SelectTrigger id="endTime" className="w-full">
+                      <SelectValue placeholder="Pilih jam selesai" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {scheduleTimeOptions.map((time) => (
+                        <SelectItem key={`end-${time}`} value={time}>
+                          {time}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid gap-2 sm:col-span-1">
                   <Label htmlFor="capacity">Kapasitas</Label>
@@ -442,8 +479,8 @@ export function LabUsagePageClient({
                   />
                 </div>
               </div>
-              <div className="grid gap-3 sm:grid-cols-4">
-                <div className="grid gap-2 sm:col-span-1">
+              <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-4">
+                <div className="grid min-w-0 gap-2">
                   <Label htmlFor="usageDate">Tanggal</Label>
                   <Input
                     id="usageDate"
@@ -454,29 +491,37 @@ export function LabUsagePageClient({
                     required
                   />
                 </div>
-                <div className="grid gap-2 sm:col-span-1">
+                <div className="grid min-w-0 gap-2">
                   <Label htmlFor="usageStart">Mulai</Label>
-                  <Input
-                    id="usageStart"
-                    name="startTime"
-                    type="time"
-                    value={usageStartTime}
-                    onChange={(e) => setUsageStartTime(e.target.value)}
-                    required
-                  />
+                  <Select name="startTime" value={usageStartTime} onValueChange={setUsageStartTime}>
+                    <SelectTrigger id="usageStart" className="w-full min-w-0">
+                      <SelectValue placeholder="Pilih jam mulai" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {usageTimeOptions.map((time) => (
+                        <SelectItem key={`usage-start-${time}`} value={time}>
+                          {time}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid gap-2 sm:col-span-1">
+                <div className="grid min-w-0 gap-2">
                   <Label htmlFor="usageEnd">Selesai</Label>
-                  <Input
-                    id="usageEnd"
-                    name="endTime"
-                    type="time"
-                    value={usageEndTime}
-                    onChange={(e) => setUsageEndTime(e.target.value)}
-                    required
-                  />
+                  <Select name="endTime" value={usageEndTime} onValueChange={setUsageEndTime}>
+                    <SelectTrigger id="usageEnd" className="w-full min-w-0">
+                      <SelectValue placeholder="Pilih jam selesai" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {usageTimeOptions.map((time) => (
+                        <SelectItem key={`usage-end-${time}`} value={time}>
+                          {time}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
-                <div className="grid gap-2 sm:col-span-1">
+                <div className="grid min-w-0 gap-2">
                   <Label htmlFor="studentCount">Jumlah Mhs</Label>
                   <Input id="studentCount" name="studentCount" type="number" min={1} required />
                 </div>
@@ -563,62 +608,81 @@ export function LabUsagePageClient({
               </CardContent>
             </Card>
           ) : (
-            <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
+            <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
               {schedules.map((schedule) => {
                 const isFull = schedule.enrolledCount >= schedule.capacity
+                const remaining = Math.max(0, schedule.capacity - schedule.enrolledCount)
                 return (
-                  <Card key={schedule.id} className="border-border/50 bg-card shadow-sm transition-shadow hover:shadow-md">
-                    <CardContent className="flex flex-col gap-4 p-5">
-                      <div className="flex items-start justify-between gap-3">
-                        <div className="flex flex-col gap-1">
-                          <h3 className="text-sm font-semibold text-card-foreground">{schedule.courseName}</h3>
-                          <p className="text-xs text-muted-foreground">{schedule.labName}</p>
+                  <Card key={schedule.id} className="border-border/50 bg-card shadow-sm">
+                    <CardContent className="flex flex-col gap-3 p-4">
+                      <div className="flex flex-wrap items-start justify-between gap-2">
+                        <div>
+                          <p className="text-sm font-semibold text-card-foreground">{schedule.courseName}</p>
+                          <p className="text-xs text-muted-foreground">
+                            {schedule.labName} - Kelompok {schedule.groupName}
+                          </p>
                         </div>
                         <Badge
-                          variant="outline"
                           className={
                             isFull
-                              ? "border-destructive/20 bg-destructive/10 text-destructive"
-                              : "border-success/20 bg-success/10 text-success-foreground"
+                              ? "rounded-full border-destructive/20 bg-destructive/10 text-destructive"
+                              : "rounded-full border-success/20 bg-success/10 text-success-foreground"
                           }
                         >
                           {isFull ? "Penuh" : "Tersedia"}
                         </Badge>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-3">
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <CalendarDays className="size-4 shrink-0" />
-                          <span>{schedule.scheduledDate}</span>
+                      <div className="grid grid-cols-2 gap-2 text-xs text-muted-foreground sm:grid-cols-4">
+                        <div className="rounded-lg border border-border/50 bg-muted/25 px-2 py-1.5">
+                          <p className="mb-0.5 text-[11px] uppercase tracking-wide">Tanggal</p>
+                          <p className="text-foreground">{schedule.scheduledDate}</p>
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Clock className="size-4 shrink-0" />
-                          <span>{schedule.startTime} - {schedule.endTime}</span>
+                        <div className="rounded-lg border border-border/50 bg-muted/25 px-2 py-1.5">
+                          <p className="mb-0.5 text-[11px] uppercase tracking-wide">Waktu</p>
+                          <p className="text-foreground">
+                            {schedule.startTime} - {schedule.endTime}
+                          </p>
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <GraduationCap className="size-4 shrink-0" />
-                          <span>{schedule.groupName}</span>
+                        <div className="rounded-lg border border-border/50 bg-muted/25 px-2 py-1.5">
+                          <p className="mb-0.5 text-[11px] uppercase tracking-wide">Kapasitas</p>
+                          <p className="text-foreground">{schedule.capacity}</p>
                         </div>
-                        <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                          <Users className="size-4 shrink-0" />
-                          <span>{schedule.enrolledCount}/{schedule.capacity} mhs</span>
+                        <div className="rounded-lg border border-border/50 bg-muted/25 px-2 py-1.5">
+                          <p className="mb-0.5 text-[11px] uppercase tracking-wide">Sisa Slot</p>
+                          <p className={isFull ? "text-destructive" : "text-success-foreground"}>{remaining}</p>
                         </div>
                       </div>
 
-                      <div className="flex items-center justify-between rounded-lg bg-muted/50 px-3 py-2">
-                        <span className="text-xs text-muted-foreground">Dosen Pengampu</span>
-                        <span className="text-xs font-medium text-foreground">{schedule.instructorName}</span>
+                      <div className="flex items-center justify-between text-xs text-muted-foreground">
+                        <div className="flex items-center gap-1.5">
+                          <GraduationCap className="size-3.5" />
+                          <span>Dosen: {schedule.instructorName}</span>
+                        </div>
+                        <div className="flex items-center gap-1.5">
+                          <Users className="size-3.5" />
+                          <span>
+                            Terdaftar {schedule.enrolledCount}/{schedule.capacity}
+                          </span>
+                        </div>
                       </div>
 
-                      <div className="flex items-center justify-end gap-2">
-                        <Button variant="outline" size="sm" onClick={() => setEditingSchedule(schedule)}>
-                          <Pencil className="size-4" />
-                          Edit
-                        </Button>
-                        <Button type="button" variant="destructive" size="sm" onClick={() => setDeletingSchedule(schedule)}>
+                      <div className="flex items-center justify-between border-t border-border/50 pt-3">
+                        <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+                          <CalendarDays className="size-3.5" />
+                          <Clock className="size-3.5" />
+                          <span>Kelola jadwal</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <Button variant="outline" size="sm" onClick={() => setEditingSchedule(schedule)}>
+                            <Pencil className="size-4" />
+                            Edit
+                          </Button>
+                          <Button type="button" variant="destructive" size="sm" onClick={() => setDeletingSchedule(schedule)}>
                             <Trash2 className="size-4" />
                             Hapus
                           </Button>
+                        </div>
                       </div>
                     </CardContent>
                   </Card>
@@ -788,11 +852,33 @@ export function LabUsagePageClient({
               <div className="grid gap-3 sm:grid-cols-4">
                 <div className="grid gap-2">
                   <Label>Mulai</Label>
-                  <Input name="startTime" type="time" defaultValue={editingSchedule.startTime} required />
+                  <Select name="startTime" defaultValue={editingSchedule.startTime}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Pilih jam mulai" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {scheduleTimeOptions.map((time) => (
+                        <SelectItem key={`edit-start-${time}`} value={time}>
+                          {time}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid gap-2">
                   <Label>Selesai</Label>
-                  <Input name="endTime" type="time" defaultValue={editingSchedule.endTime} required />
+                  <Select name="endTime" defaultValue={editingSchedule.endTime}>
+                    <SelectTrigger className="w-full">
+                      <SelectValue placeholder="Pilih jam selesai" />
+                    </SelectTrigger>
+                    <SelectContent className="max-h-64">
+                      {scheduleTimeOptions.map((time) => (
+                        <SelectItem key={`edit-end-${time}`} value={time}>
+                          {time}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid gap-2">
                   <Label>Kapasitas</Label>

@@ -1,7 +1,6 @@
 "use client"
 
 import dynamic from "next/dynamic"
-import { Sparkles } from "lucide-react"
 import { SidebarProvider, SidebarInset, SidebarTrigger } from "@/components/ui/sidebar"
 import { AppSidebar } from "@/components/app-sidebar"
 import { Separator } from "@/components/ui/separator"
@@ -84,10 +83,6 @@ export default function DashboardLayout({
           <div className="min-w-0">
             <div className="flex items-center gap-2">
               <h1 className="truncate text-sm font-semibold text-foreground">{meta.title}</h1>
-              <span className="hidden items-center gap-1 rounded-full border border-border/60 bg-muted/30 px-2 py-0.5 text-[11px] font-medium text-muted-foreground md:inline-flex">
-                <Sparkles className="size-3" />
-                SILAB-KL
-              </span>
             </div>
             <p className="hidden truncate text-xs text-muted-foreground lg:block">{meta.subtitle}</p>
           </div>

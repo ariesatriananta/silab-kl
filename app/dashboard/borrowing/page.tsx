@@ -14,15 +14,9 @@ import { db } from "@/lib/db/client"
 import {
   borrowingApprovals,
   borrowingApprovalMatrices,
-  borrowingHandovers,
-  borrowingReturnItems,
-  borrowingReturns,
   borrowingTransactionItems,
   borrowingTransactions,
-  consumableItems,
   labs,
-  toolAssets,
-  toolModels,
   userLabAssignments,
   users,
 } from "@/lib/db/schema"
@@ -79,15 +73,6 @@ function fmtDate(date: Date | null) {
   if (!date) return null
   return new Intl.DateTimeFormat("id-ID", {
     dateStyle: "medium",
-    timeZone: "Asia/Jakarta",
-  }).format(date)
-}
-
-function fmtDateTime(date: Date | null) {
-  if (!date) return null
-  return new Intl.DateTimeFormat("id-ID", {
-    dateStyle: "medium",
-    timeStyle: "short",
     timeZone: "Asia/Jakarta",
   }).format(date)
 }
