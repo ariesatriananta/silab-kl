@@ -48,11 +48,9 @@ async function getActiveBorrowingMatrixForLab(labId: string) {
       labId: true,
       isActive: true,
       step1ApproverUserId: true,
-      step2ApproverUserId: true,
     },
   })
   if (!matrix) return null
-  if (!matrix.step2ApproverUserId) return null
   return matrix
 }
 
@@ -60,6 +58,7 @@ const createBorrowingRequestSchema = z.object({
   labId: z.string().uuid(),
   requesterUserId: z.string().uuid(),
   purpose: z.string().min(5, "Keperluan minimal 5 karakter"),
+  studyProgram: z.string().trim().min(2, "Prodi wajib diisi").max(150),
   courseName: z.string().trim().min(2, "Mata kuliah wajib diisi").max(200),
   materialTopic: z.string().trim().min(2, "Materi wajib diisi").max(200),
   semesterLabel: z.string().trim().min(1, "Semester wajib diisi").max(50),
@@ -164,6 +163,7 @@ function mapCreateBorrowingIssueMessage(issue: z.ZodIssue) {
     labId: "Laboratorium",
     requesterUserId: "Pemohon",
     purpose: "Keperluan",
+    studyProgram: "Prodi",
     courseName: "Mata Kuliah",
     materialTopic: "Materi",
     semesterLabel: "Semester",
@@ -205,6 +205,7 @@ export async function createBorrowingRequestAction(
     labId: formData.get("labId"),
     requesterUserId: formData.get("requesterUserId"),
     purpose: formData.get("purpose"),
+    studyProgram: formData.get("studyProgram"),
     courseName: formData.get("courseName"),
     materialTopic: formData.get("materialTopic"),
     semesterLabel: formData.get("semesterLabel"),
@@ -258,7 +259,7 @@ export async function createBorrowingRequestAction(
     return { ok: false, message: "Dosen tidak dapat membuat pengajuan peminjaman." }
   }
 
-  const [labExists, requester, actorAssignment, matrixConfig, selectedAdvisorApprover] = await Promise.all([
+  const [labExists, requester, actorAssignment, matrixConfig, selectedAdvisorApprover, plpAssignment] = await Promise.all([
     db.query.labs.findFirst({
       where: and(eq(labs.id, labId), eq(labs.isActive, true)),
       columns: { id: true },
@@ -290,6 +291,15 @@ export async function createBorrowingRequestAction(
         ),
       )
       .then((rows) => rows[0] ?? null),
+    db
+      .select({
+        userId: userLabAssignments.userId,
+      })
+      .from(userLabAssignments)
+      .innerJoin(users, eq(users.id, userLabAssignments.userId))
+      .where(and(eq(userLabAssignments.labId, labId), eq(users.role, "petugas_plp"), eq(users.isActive, true)))
+      .limit(1)
+      .then((rows) => rows[0] ?? null),
   ])
 
   if (!labExists) return { ok: false, message: "Lab tidak ditemukan atau nonaktif." }
@@ -297,12 +307,14 @@ export async function createBorrowingRequestAction(
   if (!matrixConfig) {
     return {
       ok: false,
-      message:
-        "Matrix approval lab belum aktif atau approver tahap 2 (Petugas PLP) belum lengkap. Hubungi admin.",
+      message: "Matrix approval lab belum aktif atau belum valid. Hubungi admin.",
     }
   }
   if (!selectedAdvisorApprover) {
     return { ok: false, message: "Dosen yang dipilih tidak valid atau tidak ter-assign pada lab ini." }
+  }
+  if (!plpAssignment) {
+    return { ok: false, message: "Lab belum memiliki Petugas PLP aktif ter-assign untuk approval tahap 2." }
   }
   if (requester.role !== "mahasiswa") {
     return { ok: false, message: "Peminjam harus akun mahasiswa." }
@@ -367,6 +379,7 @@ export async function createBorrowingRequestAction(
           requesterUserId,
           createdByUserId: actorUserId,
           purpose: parsed.data.purpose.trim(),
+          studyProgram: parsed.data.studyProgram.trim(),
           courseName: parsed.data.courseName.trim(),
           materialTopic: parsed.data.materialTopic.trim(),
           semesterLabel: parsed.data.semesterLabel.trim(),
@@ -484,10 +497,9 @@ async function validateApprovalActorAndTransaction(transactionId: string) {
       id: true,
       isActive: true,
       step1ApproverUserId: true,
-      step2ApproverUserId: true,
     },
   })
-  if (!matrixRow?.isActive || !matrixRow.step2ApproverUserId) {
+  if (!matrixRow?.isActive) {
     return { error: "Matrix approval transaksi tidak valid. Hubungi admin." as const }
   }
 
@@ -503,21 +515,18 @@ async function validateApprovalActorAndTransaction(transactionId: string) {
   const approvedStepSet = new Set(approvedRows.map((r) => r.stepOrder))
   const nextStepOrder = BORROWING_APPROVAL_FLOW.find((stepOrder) => !approvedStepSet.has(stepOrder))
   const step1ApproverUserId = txRow.step1ApproverUserId ?? matrixRow.step1ApproverUserId
-  const requiredApproverUserId =
-    nextStepOrder === 1 ? step1ApproverUserId : nextStepOrder === 2 ? matrixRow.step2ApproverUserId : null
+  const requiredApproverUserId = nextStepOrder === 1 ? step1ApproverUserId : null
   const requiredRole = nextStepOrder === 1 ? "dosen" : nextStepOrder === 2 ? "petugas_plp" : null
   if (!nextStepOrder || !requiredRole) {
     return { error: "Approval sudah lengkap untuk transaksi ini." as const }
   }
-  if (!requiredApproverUserId) {
+  if (nextStepOrder === 1 && !requiredApproverUserId) {
     return {
-      error:
-        nextStepOrder === 1
-          ? "Approver Dosen untuk transaksi ini belum ditetapkan."
-          : "Approver Petugas PLP untuk transaksi ini belum ditetapkan.",
+      error: "Approver Dosen untuk transaksi ini belum ditetapkan.",
     }
   }
-  const isAdminOverride = session.user.role === "admin" && session.user.id !== requiredApproverUserId
+  const isAdminOverride =
+    session.user.role === "admin" && ((nextStepOrder === 1 && session.user.id !== requiredApproverUserId) || nextStepOrder === 2)
 
   if (session.user.role !== "admin") {
     if (session.user.role !== requiredRole) {
@@ -528,12 +537,9 @@ async function validateApprovalActorAndTransaction(transactionId: string) {
             : "Approval tahap 2 wajib dilakukan Petugas PLP setelah Dosen.",
       }
     }
-    if (session.user.id !== requiredApproverUserId) {
+    if (nextStepOrder === 1 && session.user.id !== requiredApproverUserId) {
       return {
-        error:
-          requiredRole === "dosen"
-            ? "Anda bukan approver Dosen yang ditetapkan pada matrix lab ini."
-            : "Anda bukan approver Petugas PLP yang ditetapkan pada matrix lab ini.",
+        error: "Anda bukan approver Dosen yang ditetapkan pada matrix lab ini.",
       }
     }
   }
@@ -574,7 +580,7 @@ export async function approveBorrowingWithFeedbackAction(
   }
   const approvalNote =
     isAdminOverride && noteTrimmed
-      ? `[ADMIN FALLBACK ${requiredRole.toUpperCase()} | target:${requiredApproverUserId}] ${noteTrimmed}`
+      ? `[ADMIN FALLBACK ${requiredRole.toUpperCase()} | target:${requiredApproverUserId ?? "assigned_pool"}] ${noteTrimmed}`
       : noteTrimmed
 
   try {
@@ -671,7 +677,7 @@ export async function rejectBorrowingWithFeedbackAction(
   }
   const rejectionNote =
     isAdminOverride && noteTrimmed
-      ? `[ADMIN FALLBACK ${requiredRole.toUpperCase()} | target:${requiredApproverUserId}] ${noteTrimmed}`
+      ? `[ADMIN FALLBACK ${requiredRole.toUpperCase()} | target:${requiredApproverUserId ?? "assigned_pool"}] ${noteTrimmed}`
       : noteTrimmed
 
   try {

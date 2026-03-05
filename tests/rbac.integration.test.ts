@@ -87,7 +87,7 @@ test("RBAC route guard: force change password override role redirect", () => {
   )
 })
 
-test("RBAC route guard: admin, PLP, dan dosen tidak di-redirect pada halaman dashboard", () => {
+test("RBAC route guard: admin/PLP tetap bebas, dosen difokuskan ke verifikasi peminjaman", () => {
   assert.equal(
     getDashboardAccessRedirect({ role: "admin", pathname: "/dashboard/borrowing", mustChangePassword: false }),
     null,
@@ -107,6 +107,22 @@ test("RBAC route guard: admin, PLP, dan dosen tidak di-redirect pada halaman das
       mustChangePassword: false,
     }),
     null,
+  )
+  assert.equal(
+    getDashboardAccessRedirect({
+      role: "dosen",
+      pathname: "/dashboard",
+      mustChangePassword: false,
+    }),
+    "/dashboard/borrowing",
+  )
+  assert.equal(
+    getDashboardAccessRedirect({
+      role: "dosen",
+      pathname: "/dashboard/consumables",
+      mustChangePassword: false,
+    }),
+    "/dashboard/borrowing",
   )
 })
 

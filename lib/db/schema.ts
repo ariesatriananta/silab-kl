@@ -290,6 +290,7 @@ export const borrowingTransactions = pgTable(
       .notNull()
       .references(() => users.id, { onDelete: "restrict" }),
     purpose: text("purpose").notNull(),
+    studyProgram: varchar("study_program", { length: 150 }).default("").notNull(),
     courseName: varchar("course_name", { length: 200 }).default("").notNull(),
     materialTopic: varchar("material_topic", { length: 200 }).default("").notNull(),
     semesterLabel: varchar("semester_label", { length: 50 }).default("").notNull(),

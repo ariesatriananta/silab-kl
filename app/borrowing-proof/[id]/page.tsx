@@ -56,6 +56,7 @@ export default async function BorrowingProofPage({
       requesterUserId: borrowingTransactions.requesterUserId,
       status: borrowingTransactions.status,
       purpose: borrowingTransactions.purpose,
+      studyProgram: borrowingTransactions.studyProgram,
       courseName: borrowingTransactions.courseName,
       materialTopic: borrowingTransactions.materialTopic,
       semesterLabel: borrowingTransactions.semesterLabel,
@@ -189,9 +190,9 @@ export default async function BorrowingProofPage({
                         <span>{row.courseName}</span>
                       </div>
                       <div className="flex">
-                        <span className="w-28 font-semibold">Materi</span>
+                        <span className="w-28 font-semibold">Prodi</span>
                         <span className="w-4">:</span>
-                        <span>{row.materialTopic}</span>
+                        <span>{row.studyProgram}</span>
                       </div>
                       <div className="flex">
                         <span className="w-28 font-semibold">Semester</span>
@@ -203,9 +204,9 @@ export default async function BorrowingProofPage({
                   <td className="w-1/2 align-top pl-5">
                     <div className="space-y-1">
                       <div className="flex">
-                        <span className="w-36 font-semibold">Waktu Pengajuan</span>
+                        <span className="w-36 font-semibold">Materi</span>
                         <span className="w-4">:</span>
-                        <span>{fmtDateTime(row.requestedAt)}</span>
+                        <span>{row.materialTopic}</span>
                       </div>
                       <div className="flex">
                         <span className="w-36 font-semibold">Keperluan</span>

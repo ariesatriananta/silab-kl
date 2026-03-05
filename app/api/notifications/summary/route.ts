@@ -57,7 +57,14 @@ function pendingApprovalCountSql(actorUserId: string, step: 1 | 2) {
         and ${
           step === 1
             ? sql`coalesce(bt.step1_approver_user_id, bam.step1_approver_user_id) = ${actorUserId}`
-            : sql`bam.step2_approver_user_id = ${actorUserId}`
+            : sql`exists (
+                select 1
+                from user_lab_assignments ula
+                inner join users u on u.id = ula.user_id
+                where ula.lab_id = bt.lab_id
+                  and ula.user_id = ${actorUserId}
+                  and u.role = 'petugas_plp'
+              )`
         }
         and not exists (
           select 1
@@ -169,9 +176,12 @@ export async function GET() {
                 and ba_ok.decision = 'approved'
             ) = 1`,
             sql`exists (
-              select 1 from borrowing_approval_matrices bam
-              where bam.id = ${borrowingTransactions.approvalMatrixId}
-                and bam.step2_approver_user_id = ${userId}
+              select 1
+              from user_lab_assignments ula
+              inner join users u on u.id = ula.user_id
+              where ula.lab_id = ${borrowingTransactions.labId}
+                and ula.user_id = ${userId}
+                and u.role = 'petugas_plp'
             )`,
           ),
           eq(borrowingTransactions.status, "approved_waiting_handover"),

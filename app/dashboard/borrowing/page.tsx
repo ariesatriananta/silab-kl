@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { and, asc, desc, eq, inArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
 
 import {
   type BorrowingCreateApprovalRouteOption,
@@ -50,7 +50,6 @@ function getMatrixRequiredApprover(input: {
     {
       id: string
       step1ApproverUserId: string | null
-      step2ApproverUserId: string | null
     }
   >
 }) {
@@ -64,7 +63,7 @@ function getMatrixRequiredApprover(input: {
     }
   }
   if (input.approvalsCount === 1) {
-    return { stepOrder: 2 as const, approverUserId: matrix.step2ApproverUserId }
+    return { stepOrder: 2 as const, approverUserId: null }
   }
   return null
 }
@@ -99,11 +98,11 @@ function getPendingApprovalInfo(input: {
   approvalsCount: number
   matrixId: string | null
   step1ApproverName: string | null
-  step2ApproverName: string | null
+  step2PoolReady: boolean
 }): PendingApprovalInfo | null {
   if (input.status !== "pending") return null
   if (!input.matrixId) return { label: "Matrix approval belum dipasang", approvers: [], triage: "blocked_matrix" }
-  if (!input.step1ApproverName || !input.step2ApproverName) {
+  if (!input.step1ApproverName || !input.step2PoolReady) {
     return { label: "Matrix approval tidak valid", approvers: [], triage: "blocked_matrix" }
   }
 
@@ -111,7 +110,7 @@ function getPendingApprovalInfo(input: {
     return { label: "Tahap 1: Dosen", approvers: [input.step1ApproverName], triage: "step1_ready" }
   }
   if (input.approvalsCount === 1) {
-    return { label: "Tahap 2: Petugas PLP", approvers: [input.step2ApproverName], triage: "step2_ready" }
+    return { label: "Tahap 2: Petugas PLP", approvers: ["Petugas PLP (sesuai assignment lab)"], triage: "step2_ready" }
   }
   return { label: "Menunggu sinkronisasi status", approvers: [], triage: "unknown" }
 }
@@ -130,7 +129,12 @@ async function getBorrowingData(
   userId: string,
   page: number,
   pageSize: number,
-  filters: { status: BorrowingPageStatusFilter; scope: BorrowingPageScopeFilter },
+  filters: {
+    status: BorrowingPageStatusFilter
+    scope: BorrowingPageScopeFilter
+    studyProgram: "all" | "Sanitasi" | "Sanitasi Lingkungan"
+    courseName: string
+  },
 ) {
   const accessibleLabIds = await getAccessibleLabIds(role, userId)
 
@@ -189,9 +193,12 @@ async function getBorrowingData(
                         and ba_ok.decision = 'approved'
                     ) = 1`,
                     sql`exists (
-                      select 1 from borrowing_approval_matrices bam
-                      where bam.id = ${borrowingTransactions.approvalMatrixId}
-                        and bam.step2_approver_user_id = ${userId}
+                      select 1
+                      from user_lab_assignments ula
+                      inner join users u on u.id = ula.user_id
+                      where ula.lab_id = ${borrowingTransactions.labId}
+                        and ula.user_id = ${userId}
+                        and u.role = 'petugas_plp'
                     )`,
                   ),
                   and(
@@ -230,7 +237,15 @@ async function getBorrowingData(
                 | "cancelled",
             )
 
-  const finalWhere = and(roleBaseWhere, scopeWhere, statusWhere)
+  const studyProgramWhere =
+    filters.studyProgram === "all"
+      ? undefined
+      : eq(borrowingTransactions.studyProgram, filters.studyProgram)
+  const courseNameWhere = filters.courseName.trim()
+    ? ilike(borrowingTransactions.courseName, `%${filters.courseName.trim()}%`)
+    : undefined
+
+  const finalWhere = and(roleBaseWhere, scopeWhere, statusWhere, studyProgramWhere, courseNameWhere)
   const shouldApplyPendingTriageSort = filters.status === "pending" || filters.scope === "waiting_me"
   const pendingTriageRank = sql<number>`
     case
@@ -245,7 +260,13 @@ async function getBorrowingData(
           when not exists (
             select 1 from borrowing_approval_matrices bam
             where bam.id = ${borrowingTransactions.approvalMatrixId}
-              and bam.step2_approver_user_id is not null
+              and exists (
+                select 1
+                from user_lab_assignments ula
+                inner join users u on u.id = ula.user_id
+                where ula.lab_id = bam.lab_id
+                  and u.role = 'petugas_plp'
+              )
           ) then 90
           when (
             select count(*)
@@ -279,6 +300,7 @@ async function getBorrowingData(
       requesterUserId: borrowingTransactions.requesterUserId,
       createdByUserId: borrowingTransactions.createdByUserId,
       purpose: borrowingTransactions.purpose,
+      studyProgram: borrowingTransactions.studyProgram,
       courseName: borrowingTransactions.courseName,
       materialTopic: borrowingTransactions.materialTopic,
       semesterLabel: borrowingTransactions.semesterLabel,
@@ -326,7 +348,7 @@ async function getBorrowingData(
     }
   }
 
-  const [itemRows, approvalRows, matrixRowsForTx] = await Promise.all([
+  const [itemRows, approvalRows, matrixRowsForTx, plpAssignedLabRows] = await Promise.all([
     db
       .select({
         transactionId: borrowingTransactionItems.transactionId,
@@ -346,7 +368,7 @@ async function getBorrowingData(
       .select({
         id: borrowingApprovalMatrices.id,
         step1ApproverUserId: borrowingApprovalMatrices.step1ApproverUserId,
-        step2ApproverUserId: borrowingApprovalMatrices.step2ApproverUserId,
+        labId: borrowingApprovalMatrices.labId,
       })
       .from(borrowingApprovalMatrices)
       .where(
@@ -357,6 +379,14 @@ async function getBorrowingData(
           return matrixIds.length > 0 ? inArray(borrowingApprovalMatrices.id, matrixIds) : sql`false`
         })(),
       ),
+    db
+      .select({
+        labId: userLabAssignments.labId,
+      })
+      .from(userLabAssignments)
+      .innerJoin(users, eq(users.id, userLabAssignments.userId))
+      .where(eq(users.role, "petugas_plp"))
+      .groupBy(userLabAssignments.labId),
   ])
 
   const approverIds = Array.from(
@@ -364,7 +394,6 @@ async function getBorrowingData(
       [
         ...txRows.map((row) => row.step1ApproverUserId),
         ...matrixRowsForTx.map((row) => row.step1ApproverUserId),
-        ...matrixRowsForTx.map((row) => row.step2ApproverUserId),
       ].filter((value): value is string => Boolean(value)),
     ),
   )
@@ -388,6 +417,7 @@ async function getBorrowingData(
 
   const approvalCountByTx = new Map(approvalRows.map((r) => [r.transactionId, Number(r.count)]))
   const matrixById = new Map(matrixRowsForTx.map((row) => [row.id, row]))
+  const plpAssignedLabSet = new Set(plpAssignedLabRows.map((row) => row.labId))
   const userById = new Map(approverUserRows.map((row) => [row.id, row.fullName]))
   const rows: BorrowingListRow[] = txRows.map((row) => {
     const status = mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate })
@@ -399,9 +429,16 @@ async function getBorrowingData(
       matrixById,
     })
     const requiredApproverName =
-      requiredApprover?.approverUserId ? userById.get(requiredApprover.approverUserId) ?? null : null
+      requiredApprover?.stepOrder === 2
+        ? "Petugas PLP (sesuai assignment lab)"
+        : requiredApprover?.approverUserId
+          ? userById.get(requiredApprover.approverUserId) ?? null
+          : null
     const adminOverrideReasonRequired =
-      role === "admin" && status === "pending" && !!requiredApprover?.approverUserId && requiredApprover.approverUserId !== userId
+      role === "admin" &&
+      status === "pending" &&
+      ((requiredApprover?.stepOrder === 2) ||
+        (!!requiredApprover?.approverUserId && requiredApprover.approverUserId !== userId))
     const pendingApproval = getPendingApprovalInfo({
       status,
       approvalsCount: approvalCountByTx.get(row.id) ?? 0,
@@ -409,7 +446,7 @@ async function getBorrowingData(
       step1ApproverName:
         (row.step1ApproverUserId ? userById.get(row.step1ApproverUserId) ?? null : null) ??
         (matrix?.step1ApproverUserId ? userById.get(matrix.step1ApproverUserId) ?? null : null),
-      step2ApproverName: matrix?.step2ApproverUserId ? userById.get(matrix.step2ApproverUserId) ?? null : null,
+      step2PoolReady: Boolean(matrix?.labId && plpAssignedLabSet.has(matrix.labId)),
     })
     return {
       id: row.id,
@@ -423,6 +460,7 @@ async function getBorrowingData(
       dueDate: fmtDate(row.dueDate),
       status,
       purpose: row.purpose,
+      studyProgram: row.studyProgram,
       courseName: row.courseName,
       materialTopic: row.materialTopic,
       semesterLabel: row.semesterLabel,
@@ -481,7 +519,6 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
         labId: borrowingApprovalMatrices.labId,
         isActive: borrowingApprovalMatrices.isActive,
         step1ApproverUserId: borrowingApprovalMatrices.step1ApproverUserId,
-        step2ApproverUserId: borrowingApprovalMatrices.step2ApproverUserId,
       })
       .from(borrowingApprovalMatrices)
       .innerJoin(labs, eq(labs.id, borrowingApprovalMatrices.labId))
@@ -522,41 +559,48 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
     dosenByLab.set(row.labId, list)
   }
 
-  const plpApproverIds = Array.from(
-    new Set(matrixRows.map((row) => row.step2ApproverUserId).filter((value): value is string => Boolean(value))),
-  )
   const plpRows =
-    plpApproverIds.length > 0
+    labsOptions.length > 0
       ? await db
           .select({
+            labId: userLabAssignments.labId,
             id: users.id,
-            role: users.role,
             fullName: users.fullName,
             nip: users.nip,
           })
-          .from(users)
-          .where(and(inArray(users.id, plpApproverIds), eq(users.role, "petugas_plp"), eq(users.isActive, true)))
+          .from(userLabAssignments)
+          .innerJoin(users, eq(users.id, userLabAssignments.userId))
+          .where(
+            and(
+              inArray(userLabAssignments.labId, labsOptions.map((lab) => lab.id)),
+              eq(users.role, "petugas_plp"),
+              eq(users.isActive, true),
+            ),
+          )
+          .orderBy(asc(users.fullName))
       : []
-  const plpById = new Map(
-    plpRows.map((row) => [row.id, { id: row.id, role: row.role, name: row.fullName, identifier: row.nip }] as const),
-  )
+  const plpByLab = new Map<string, Array<{ id: string; name: string; identifier: string | null }>>()
+  for (const row of plpRows) {
+    const list = plpByLab.get(row.labId) ?? []
+    list.push({ id: row.id, name: row.fullName, identifier: row.nip })
+    plpByLab.set(row.labId, list)
+  }
 
   const approvalRoutes: BorrowingCreateApprovalRouteOption[] = labsOptions.map((lab) => {
     const matrix = matrixByLab.get(lab.id)
     const mappedDosen = dosenByLab.get(lab.id) ?? []
-    const step2 = matrix?.step2ApproverUserId ? plpById.get(matrix.step2ApproverUserId) : null
-    const selectedPlp = step2 && step2.role === "petugas_plp" ? [{ id: step2.id, name: step2.name, identifier: step2.identifier }] : []
-    const matrixValid = Boolean(matrix?.step2ApproverUserId)
-    const isReady = Boolean(matrix?.isActive && matrixValid && mappedDosen.length > 0 && selectedPlp.length > 0)
+    const mappedPlp = plpByLab.get(lab.id) ?? []
+    const matrixValid = mappedPlp.length > 0
+    const isReady = Boolean(matrix?.isActive && matrixValid && mappedDosen.length > 0)
     return {
       labId: lab.id,
       matrixActive: matrix?.isActive ?? false,
       matrixValid,
       isReady,
       step1Role: mappedDosen.length > 0 ? "dosen" : null,
-      step2Role: selectedPlp.length > 0 ? "petugas_plp" : null,
+      step2Role: mappedPlp.length > 0 ? "petugas_plp" : null,
       dosenApprovers: mappedDosen,
-      plpApprovers: selectedPlp,
+      plpApprovers: mappedPlp,
     }
   })
 
@@ -581,6 +625,8 @@ export default async function BorrowingPage({
   const page = Math.max(1, Number.parseInt(pageParam ?? "1", 10) || 1)
   const statusParamRaw = Array.isArray(sp.status) ? sp.status[0] : sp.status
   const scopeParamRaw = Array.isArray(sp.scope) ? sp.scope[0] : sp.scope
+  const studyProgramParamRaw = Array.isArray(sp.studyProgram) ? sp.studyProgram[0] : sp.studyProgram
+  const courseNameParamRaw = Array.isArray(sp.courseName) ? sp.courseName[0] : sp.courseName
   const statusParam = ([
     "all",
     "pending",
@@ -599,13 +645,19 @@ export default async function BorrowingPage({
   const scopeParam: BorrowingPageScopeFilter = ["all", "mine", "my_labs", "waiting_me"].includes(scopeCandidate)
     ? scopeCandidate
     : defaultScope
+  const studyProgramParam = (["all", "Sanitasi", "Sanitasi Lingkungan"] as const).includes(
+    (studyProgramParamRaw ?? "all") as "all" | "Sanitasi" | "Sanitasi Lingkungan",
+  )
+    ? ((studyProgramParamRaw ?? "all") as "all" | "Sanitasi" | "Sanitasi Lingkungan")
+    : "all"
+  const courseNameParam = (courseNameParamRaw ?? "").trim()
 
   const { rows, details, accessibleLabIds, pagination, activeFilters } = await getBorrowingData(
     role,
     currentUserId,
     page,
     20,
-    { status: statusParam, scope: scopeParam },
+    { status: statusParam, scope: scopeParam, studyProgram: studyProgramParam, courseName: courseNameParam },
   )
   const options = await getCreateOptions(role, currentUserId, accessibleLabIds)
   const prefill = {
@@ -632,4 +684,3 @@ export default async function BorrowingPage({
     />
   )
 }
-

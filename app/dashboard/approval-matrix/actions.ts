@@ -19,7 +19,6 @@ const saveMatrixSchema = z.object({
   labId: z.string().uuid(),
   isActive: z.enum(["true", "false"]).transform((v) => v === "true"),
   step1ApproverUserId: z.string().uuid().optional(),
-  step2ApproverUserId: z.string().uuid().optional(),
 })
 
 async function requireAdmin() {
@@ -39,45 +38,27 @@ export async function saveBorrowingApprovalMatrixAction(
     labId: formData.get("labId"),
     isActive: formData.get("isActive"),
     step1ApproverUserId: formData.get("step1ApproverUserId")?.toString() || undefined,
-    step2ApproverUserId: formData.get("step2ApproverUserId")?.toString() || undefined,
   })
   if (!parsed.success) return { ok: false, message: "Data matrix approval tidak valid." }
 
-  if (!parsed.data.step1ApproverUserId || !parsed.data.step2ApproverUserId) {
-    return { ok: false, message: "Pilih approver tahap 1 (Dosen) dan tahap 2 (Petugas PLP)." }
+  if (!parsed.data.step1ApproverUserId) {
+    return { ok: false, message: "Pilih approver tahap 1 (Dosen)." }
   }
 
-  const [step1User, step2User] = await Promise.all([
-    db.query.users.findFirst({
-      where: and(eq(users.id, parsed.data.step1ApproverUserId), eq(users.role, "dosen"), eq(users.isActive, true)),
-      columns: { id: true },
-    }),
-    db.query.users.findFirst({
-      where: and(eq(users.id, parsed.data.step2ApproverUserId), eq(users.role, "petugas_plp"), eq(users.isActive, true)),
-      columns: { id: true },
-    }),
-  ])
+  const step1User = await db.query.users.findFirst({
+    where: and(eq(users.id, parsed.data.step1ApproverUserId), eq(users.role, "dosen"), eq(users.isActive, true)),
+    columns: { id: true },
+  })
   if (!step1User) return { ok: false, message: "Approver tahap 1 harus user Dosen aktif." }
-  if (!step2User) return { ok: false, message: "Approver tahap 2 harus user Petugas PLP aktif." }
 
-  const [step1Assignment, step2Assignment] = await Promise.all([
-    db.query.userLabAssignments.findFirst({
-      where: and(
-        eq(userLabAssignments.userId, parsed.data.step1ApproverUserId),
-        eq(userLabAssignments.labId, parsed.data.labId),
-      ),
-      columns: { userId: true },
-    }),
-    db.query.userLabAssignments.findFirst({
-      where: and(
-        eq(userLabAssignments.userId, parsed.data.step2ApproverUserId),
-        eq(userLabAssignments.labId, parsed.data.labId),
-      ),
-      columns: { userId: true },
-    }),
-  ])
+  const step1Assignment = await db.query.userLabAssignments.findFirst({
+    where: and(
+      eq(userLabAssignments.userId, parsed.data.step1ApproverUserId),
+      eq(userLabAssignments.labId, parsed.data.labId),
+    ),
+    columns: { userId: true },
+  })
   if (!step1Assignment) return { ok: false, message: "Dosen tahap 1 harus ter-assign ke lab ini." }
-  if (!step2Assignment) return { ok: false, message: "Petugas PLP tahap 2 harus ter-assign ke lab ini." }
 
   if (parsed.data.isActive) {
     const [dosenCountRows, plpCountRows] = await Promise.all([
@@ -112,7 +93,6 @@ export async function saveBorrowingApprovalMatrixAction(
         .set({
           isActive: parsed.data.isActive,
           step1ApproverUserId: parsed.data.step1ApproverUserId,
-          step2ApproverUserId: parsed.data.step2ApproverUserId,
           updatedAt: new Date(),
         })
         .where(eq(borrowingApprovalMatrices.id, existing.id))
@@ -121,7 +101,6 @@ export async function saveBorrowingApprovalMatrixAction(
         labId: parsed.data.labId,
         isActive: parsed.data.isActive,
         step1ApproverUserId: parsed.data.step1ApproverUserId,
-        step2ApproverUserId: parsed.data.step2ApproverUserId,
       })
     }
   } catch (error) {
@@ -145,7 +124,7 @@ export async function saveBorrowingApprovalMatrixAction(
       isActive: parsed.data.isActive,
       flow: "dosen->petugas_plp",
       step1ApproverUserId: parsed.data.step1ApproverUserId,
-      step2ApproverUserId: parsed.data.step2ApproverUserId,
+      step2ApproverMode: "assigned_plp_pool",
     },
   })
 

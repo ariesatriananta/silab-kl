@@ -24,20 +24,16 @@ export type ApprovalMatrixRow = {
   labName: string
   isActive: boolean
   step1ApproverUserId: string | null
-  step2ApproverUserId: string | null
   step1ApproverName: string | null
-  step2ApproverName: string | null
   dosenAssignedCount: number
   plpAssignedCount: number
   dosenCandidates: Array<{ id: string; name: string; identifier: string | null }>
-  plpCandidates: Array<{ id: string; name: string; identifier: string | null }>
 }
 
 export function ApprovalMatrixPageClient({ rows }: { rows: ApprovalMatrixRow[] }) {
   const [selected, setSelected] = useState<ApprovalMatrixRow | null>(null)
   const [isActive, setIsActive] = useState(false)
   const [step1ApproverUserId, setStep1ApproverUserId] = useState<string>("")
-  const [step2ApproverUserId, setStep2ApproverUserId] = useState<string>("")
 
   const [state, action, pending] = useActionState(
     saveBorrowingApprovalMatrixAction,
@@ -66,7 +62,7 @@ export function ApprovalMatrixPageClient({ rows }: { rows: ApprovalMatrixRow[] }
       total: rows.length,
       active: rows.filter((r) => r.isActive).length,
       inactive: rows.filter((r) => !r.isActive).length,
-      notReady: rows.filter((r) => !r.step1ApproverUserId || !r.step2ApproverUserId).length,
+      notReady: rows.filter((r) => !r.step1ApproverUserId || r.plpAssignedCount === 0).length,
     }),
     [rows],
   )
@@ -76,7 +72,7 @@ export function ApprovalMatrixPageClient({ rows }: { rows: ApprovalMatrixRow[] }
       <div className="rounded-2xl border border-border/60 bg-gradient-to-br from-card to-muted/30 p-5 shadow-sm">
         <h1 className="text-xl font-semibold text-foreground">Approval Matrix Peminjaman</h1>
         <p className="mt-1 text-sm text-muted-foreground">
-          Setiap lab wajib memiliki matrix aktif dengan urutan tetap: tahap 1 Dosen, tahap 2 Petugas PLP.
+          Setiap lab wajib memiliki matrix aktif dengan urutan tetap: tahap 1 Dosen, tahap 2 Petugas PLP (pool sesuai assignment lab).
         </p>
       </div>
 
@@ -120,12 +116,12 @@ export function ApprovalMatrixPageClient({ rows }: { rows: ApprovalMatrixRow[] }
                   </TableRow>
                 )}
                 {rows.map((row) => {
-                  const ready = Boolean(row.step1ApproverUserId && row.step2ApproverUserId)
+                  const ready = Boolean(row.step1ApproverUserId && row.plpAssignedCount > 0)
                   return (
                     <TableRow key={row.labId} className="hover:bg-muted/30">
                       <TableCell className="font-medium text-foreground">{row.labName}</TableCell>
                       <TableCell>{row.step1ApproverName ?? <span className="text-muted-foreground">Belum dipilih</span>}</TableCell>
-                      <TableCell>{row.step2ApproverName ?? <span className="text-muted-foreground">Belum dipilih</span>}</TableCell>
+                      <TableCell>{row.plpAssignedCount > 0 ? <span className="text-muted-foreground">Semua PLP ter-assign</span> : <span className="text-muted-foreground">Belum ada assignment PLP</span>}</TableCell>
                       <TableCell>{row.dosenAssignedCount}</TableCell>
                       <TableCell>{row.plpAssignedCount}</TableCell>
                       <TableCell>
@@ -150,7 +146,6 @@ export function ApprovalMatrixPageClient({ rows }: { rows: ApprovalMatrixRow[] }
                             setSelected(row)
                             setIsActive(row.isActive)
                             setStep1ApproverUserId(row.step1ApproverUserId ?? "")
-                            setStep2ApproverUserId(row.step2ApproverUserId ?? "")
                           }}
                         >
                           Atur
@@ -183,7 +178,6 @@ export function ApprovalMatrixPageClient({ rows }: { rows: ApprovalMatrixRow[] }
               <input type="hidden" name="labId" value={selected.labId} />
               <input type="hidden" name="isActive" value={String(isActive)} />
               <input type="hidden" name="step1ApproverUserId" value={step1ApproverUserId} />
-              <input type="hidden" name="step2ApproverUserId" value={step2ApproverUserId} />
 
               <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
                 <p className="text-sm font-medium text-foreground">Rute Approval</p>
@@ -222,26 +216,9 @@ export function ApprovalMatrixPageClient({ rows }: { rows: ApprovalMatrixRow[] }
                     </SelectContent>
                   </Select>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="step2ApproverUserId">Approver-2 (Petugas PLP)</Label>
-                  <Select value={step2ApproverUserId} onValueChange={setStep2ApproverUserId}>
-                    <SelectTrigger id="step2ApproverUserId" className="w-full">
-                      <SelectValue placeholder="Pilih petugas PLP approver" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {selected.plpCandidates.length === 0 && (
-                        <SelectItem value="__no_plp__" disabled>
-                          Belum ada petugas PLP ter-assign
-                        </SelectItem>
-                      )}
-                      {selected.plpCandidates.map((candidate) => (
-                        <SelectItem key={candidate.id} value={candidate.id}>
-                          {candidate.name}
-                          {candidate.identifier ? ` (${candidate.identifier})` : ""}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+                <div className="rounded-xl border border-border/50 bg-muted/20 px-3 py-2 text-sm text-muted-foreground">
+                  <p className="font-medium text-foreground">Approver-2 (Petugas PLP)</p>
+                  <p className="mt-1">Semua user Petugas PLP yang ter-assign ke lab ini dapat melakukan approval tahap 2.</p>
                 </div>
               </div>
 

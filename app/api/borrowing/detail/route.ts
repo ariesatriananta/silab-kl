@@ -61,18 +61,22 @@ function getPendingApprovalInfo(input: {
   approvalsCount: number
   matrixId: string | null
   step1ApproverName: string | null
-  step2ApproverName: string | null
+  step2PoolReady: boolean
 }) {
   if (input.status !== "pending") return null
   if (!input.matrixId) return { label: "Matrix approval belum dipasang", approvers: [], triage: "blocked_matrix" as const }
-  if (!input.step1ApproverName || !input.step2ApproverName) {
+  if (!input.step1ApproverName || !input.step2PoolReady) {
     return { label: "Matrix approval tidak valid", approvers: [], triage: "blocked_matrix" as const }
   }
   if (input.approvalsCount <= 0) {
     return { label: "Tahap 1: Dosen", approvers: [input.step1ApproverName], triage: "step1_ready" as const }
   }
   if (input.approvalsCount === 1) {
-    return { label: "Tahap 2: Petugas PLP", approvers: [input.step2ApproverName], triage: "step2_ready" as const }
+    return {
+      label: "Tahap 2: Petugas PLP",
+      approvers: ["Petugas PLP (sesuai assignment lab)"],
+      triage: "step2_ready" as const,
+    }
   }
   return { label: "Menunggu sinkronisasi status", approvers: [], triage: "unknown" as const }
 }
@@ -80,7 +84,7 @@ function getPendingApprovalInfo(input: {
 function getMatrixRequiredApprover(input: {
   approvalsCount: number
   transactionStep1ApproverUserId: string | null
-  matrix: { step1ApproverUserId: string | null; step2ApproverUserId: string | null } | null
+  matrix: { step1ApproverUserId: string | null } | null
 }) {
   if (!input.matrix) return null
   if (input.approvalsCount <= 0) {
@@ -90,7 +94,7 @@ function getMatrixRequiredApprover(input: {
     }
   }
   if (input.approvalsCount === 1) {
-    return { stepOrder: 2 as const, approverUserId: input.matrix.step2ApproverUserId }
+    return { stepOrder: 2 as const, approverUserId: null }
   }
   return null
 }
@@ -138,6 +142,7 @@ export async function GET(request: Request) {
       labId: borrowingTransactions.labId,
       requesterUserId: borrowingTransactions.requesterUserId,
       purpose: borrowingTransactions.purpose,
+      studyProgram: borrowingTransactions.studyProgram,
       courseName: borrowingTransactions.courseName,
       materialTopic: borrowingTransactions.materialTopic,
       semesterLabel: borrowingTransactions.semesterLabel,
@@ -239,7 +244,6 @@ export async function GET(request: Request) {
             .select({
               id: borrowingApprovalMatrices.id,
               step1ApproverUserId: borrowingApprovalMatrices.step1ApproverUserId,
-              step2ApproverUserId: borrowingApprovalMatrices.step2ApproverUserId,
             })
             .from(borrowingApprovalMatrices)
             .where(eq(borrowingApprovalMatrices.id, row.approvalMatrixId))
@@ -248,7 +252,7 @@ export async function GET(request: Request) {
 
   const approverIds = Array.from(
     new Set(
-      [row.step1ApproverUserId, matrixRows[0]?.step1ApproverUserId ?? null, matrixRows[0]?.step2ApproverUserId ?? null].filter(
+      [row.step1ApproverUserId, matrixRows[0]?.step1ApproverUserId ?? null].filter(
         (value): value is string => Boolean(value),
       ),
     ),
@@ -277,18 +281,28 @@ export async function GET(request: Request) {
   const matrix = matrixRows[0] ?? null
   const userById = new Map(userRows.map((u) => [u.id, u.fullName]))
   const status = mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate })
+  const plpAssignmentRows = await db
+    .select({ userId: userLabAssignments.userId })
+    .from(userLabAssignments)
+    .innerJoin(users, eq(users.id, userLabAssignments.userId))
+    .where(and(eq(userLabAssignments.labId, row.labId), eq(users.role, "petugas_plp"), eq(users.isActive, true)))
+    .limit(1)
   const requiredApprover = getMatrixRequiredApprover({
     approvalsCount: approvalCount,
     transactionStep1ApproverUserId: row.step1ApproverUserId,
     matrix,
   })
   const requiredApproverName =
-    requiredApprover?.approverUserId ? userById.get(requiredApprover.approverUserId) ?? null : null
+    requiredApprover?.stepOrder === 2
+      ? "Petugas PLP (sesuai assignment lab)"
+      : requiredApprover?.approverUserId
+        ? userById.get(requiredApprover.approverUserId) ?? null
+        : null
   const adminOverrideReasonRequired =
     role === "admin" &&
     status === "pending" &&
-    !!requiredApprover?.approverUserId &&
-    requiredApprover.approverUserId !== userId
+    ((requiredApprover?.stepOrder === 2) ||
+      (!!requiredApprover?.approverUserId && requiredApprover.approverUserId !== userId))
   const pendingApproval = getPendingApprovalInfo({
     status,
     approvalsCount: approvalCount,
@@ -296,7 +310,7 @@ export async function GET(request: Request) {
     step1ApproverName:
       (row.step1ApproverUserId ? userById.get(row.step1ApproverUserId) ?? null : null) ??
       (matrix?.step1ApproverUserId ? userById.get(matrix.step1ApproverUserId) ?? null : null),
-    step2ApproverName: matrix?.step2ApproverUserId ? userById.get(matrix.step2ApproverUserId) ?? null : null,
+    step2PoolReady: plpAssignmentRows.length > 0,
   })
 
   const returnItemsByReturnId = new Map<string, Array<{
@@ -326,6 +340,7 @@ export async function GET(request: Request) {
       nim: row.requesterNim,
       status,
       purpose: row.purpose,
+      studyProgram: row.studyProgram,
       courseName: row.courseName,
       materialTopic: row.materialTopic,
       semesterLabel: row.semesterLabel,

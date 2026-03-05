@@ -30,6 +30,18 @@ export function getDashboardAccessRedirect(input: DashboardRedirectInput): strin
     }
   }
 
+  if (role === "dosen") {
+    if (pathname === "/dashboard") return "/dashboard/borrowing"
+    const dosenAllowedPaths = new Set([
+      "/dashboard/borrowing",
+      "/dashboard/account/profile",
+      "/dashboard/account/security",
+    ])
+    if (!dosenAllowedPaths.has(pathname)) {
+      return "/dashboard/borrowing"
+    }
+  }
+
   return null
 }
 

@@ -23,7 +23,6 @@ export default async function ApprovalMatrixPage() {
         labId: borrowingApprovalMatrices.labId,
         isActive: borrowingApprovalMatrices.isActive,
         step1ApproverUserId: borrowingApprovalMatrices.step1ApproverUserId,
-        step2ApproverUserId: borrowingApprovalMatrices.step2ApproverUserId,
       })
       .from(borrowingApprovalMatrices),
     db
@@ -64,20 +63,15 @@ export default async function ApprovalMatrixPage() {
     const assignment = assignmentSummary.get(lab.id) ?? { dosen: 0, plp: 0 }
     const candidates = approverCandidatesByLab.get(lab.id) ?? { dosen: [], plp: [] }
     const selectedStep1 = candidates.dosen.find((item) => item.id === matrix?.step1ApproverUserId) ?? null
-    const selectedStep2 = candidates.plp.find((item) => item.id === matrix?.step2ApproverUserId) ?? null
-
     return {
       labId: lab.id,
       labName: lab.name,
       isActive: matrix?.isActive ?? false,
       step1ApproverUserId: matrix?.step1ApproverUserId ?? null,
-      step2ApproverUserId: matrix?.step2ApproverUserId ?? null,
       step1ApproverName: selectedStep1?.name ?? null,
-      step2ApproverName: selectedStep2?.name ?? null,
       dosenAssignedCount: assignment.dosen,
       plpAssignedCount: assignment.plp,
       dosenCandidates: candidates.dosen,
-      plpCandidates: candidates.plp,
     }
   })
 

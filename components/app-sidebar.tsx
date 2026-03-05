@@ -44,7 +44,7 @@ const mainNavItems: Array<{
   { title: "Alat Laboratorium", href: "/dashboard/tools", icon: Wrench, roles: ["admin", "petugas_plp"] },
   { title: "Approval Matrix", href: "/dashboard/approval-matrix", icon: Network, roles: ["admin"] },
   { title: "Kelola User", href: "/dashboard/users", icon: Users, roles: ["admin"] },
-  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "petugas_plp", "dosen"] },
+  { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "petugas_plp"] },
 ]
 
 const studentNavItems: Array<{

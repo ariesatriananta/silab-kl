@@ -141,6 +141,8 @@ const roleLabel: Record<"admin" | "mahasiswa" | "petugas_plp" | "dosen", string>
   dosen: "Dosen",
 }
 
+const studyProgramOptions = ["Sanitasi", "Sanitasi Lingkungan"] as const
+
 const returnConditionLabel: Record<"baik" | "maintenance" | "damaged", string> = {
   baik: "Baik",
   maintenance: "Perlu Maintenance",
@@ -214,6 +216,7 @@ export type BorrowingListRow = {
   dueDate: string | null
   status: DisplayStatus
   purpose: string
+  studyProgram: string
   courseName: string
   materialTopic: string
   semesterLabel: string
@@ -234,6 +237,7 @@ export type BorrowingDetail = {
   nim: string | null
   status: DisplayStatus
   purpose: string
+  studyProgram: string
   courseName: string
   materialTopic: string
   semesterLabel: string
@@ -332,6 +336,8 @@ export function BorrowingPageClient({
   initialListFilters: {
     status: DisplayStatus | "all" | "approved_waiting_handover"
     scope: "all" | "mine" | "my_labs" | "waiting_me"
+    studyProgram: "all" | "Sanitasi" | "Sanitasi Lingkungan"
+    courseName: string
   }
   prefill?: {
     openCreate?: boolean
@@ -345,6 +351,10 @@ export function BorrowingPageClient({
   const [pagingPending, startPagingTransition] = useTransition()
   const [statusFilter, setStatusFilter] = useState<string>(initialListFilters.status)
   const [scopeFilter, setScopeFilter] = useState<"all" | "mine" | "my_labs" | "waiting_me">(initialListFilters.scope)
+  const [studyProgramFilter, setStudyProgramFilter] = useState<"all" | "Sanitasi" | "Sanitasi Lingkungan">(
+    initialListFilters.studyProgram,
+  )
+  const [courseNameFilter, setCourseNameFilter] = useState(initialListFilters.courseName)
   const [studentHintOpen, setStudentHintOpen] = useState(false)
   const [selectedBorrowingId, setSelectedBorrowingId] = useState<string | null>(null)
   const [detailMap, setDetailMap] = useState<Record<string, BorrowingDetail>>(details)
@@ -367,6 +377,7 @@ export function BorrowingPageClient({
   const [toolVisibleCount, setToolVisibleCount] = useState(30)
   const [consumableVisibleCount, setConsumableVisibleCount] = useState(30)
   const [courseName, setCourseName] = useState("")
+  const [studyProgram, setStudyProgram] = useState<string | undefined>(undefined)
   const [materialTopic, setMaterialTopic] = useState("")
   const [semesterLabel, setSemesterLabel] = useState("")
   const [groupName, setGroupName] = useState("")
@@ -421,8 +432,10 @@ export function BorrowingPageClient({
     queueMicrotask(() => {
       setStatusFilter(initialListFilters.status)
       setScopeFilter(initialListFilters.scope)
+      setStudyProgramFilter(initialListFilters.studyProgram)
+      setCourseNameFilter(initialListFilters.courseName)
     })
-  }, [initialListFilters.status, initialListFilters.scope])
+  }, [initialListFilters.status, initialListFilters.scope, initialListFilters.studyProgram, initialListFilters.courseName])
 
   useEffect(() => {
     setDetailMap(details)
@@ -601,16 +614,30 @@ export function BorrowingPageClient({
     })
   }
 
-  const applyListFilters = (next: Partial<{ status: string; scope: "all" | "mine" | "my_labs" | "waiting_me"; page: number }>) => {
+  const applyListFilters = (
+    next: Partial<{
+      status: string
+      scope: "all" | "mine" | "my_labs" | "waiting_me"
+      studyProgram: "all" | "Sanitasi" | "Sanitasi Lingkungan"
+      courseName: string
+      page: number
+    }>,
+  ) => {
     const params = new URLSearchParams(searchParams.toString())
     const nextStatus = next.status ?? statusFilter
     const nextScope = next.scope ?? scopeFilter
+    const nextStudyProgram = next.studyProgram ?? studyProgramFilter
+    const nextCourseName = (next.courseName ?? courseNameFilter).trim()
     const nextPage = next.page ?? 1
     if (nextStatus !== "all") params.set("status", nextStatus)
     else params.delete("status")
     if (nextScope !== "all")
       params.set("scope", nextScope)
     else params.delete("scope")
+    if (nextStudyProgram !== "all") params.set("studyProgram", nextStudyProgram)
+    else params.delete("studyProgram")
+    if (nextCourseName.length > 0) params.set("courseName", nextCourseName)
+    else params.delete("courseName")
     if (nextPage > 1) params.set("page", String(nextPage))
     else params.delete("page")
     const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
@@ -734,6 +761,7 @@ export function BorrowingPageClient({
       setConsumableQuery("")
       setToolVisibleCount(30)
       setConsumableVisibleCount(30)
+      setStudyProgram(undefined)
       setCourseName("")
       setMaterialTopic("")
       setSemesterLabel("")
@@ -907,10 +935,25 @@ export function BorrowingPageClient({
                   <p className="text-xs text-destructive">{createInventoryError}</p>
                 )}
               </div>
-              <div className="grid gap-3 lg:grid-cols-3">
+              <div className="grid gap-3 lg:grid-cols-4">
                 <div className="grid gap-2">
                   <Label htmlFor="purpose">Keperluan</Label>
                   <Input id="purpose" name="purpose" placeholder="Contoh: Praktikum Hematologi" required />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="studyProgram">Prodi</Label>
+                  <Select name="studyProgram" value={studyProgram} onValueChange={setStudyProgram} required>
+                    <SelectTrigger id="studyProgram" className="w-full">
+                      <SelectValue placeholder="Pilih prodi" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {studyProgramOptions.map((program) => (
+                        <SelectItem key={program} value={program}>
+                          {program}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="courseName">Mata Kuliah</Label>
@@ -1238,7 +1281,7 @@ export function BorrowingPageClient({
                   {!isApprovalRouteReady && (
                     <p className="mt-2 text-xs text-warning-foreground">
                       Pengajuan belum siap. Pastikan dosen tahap 1 dipilih dan matrix lab memiliki approver tahap 2
-                      Petugas PLP yang aktif.
+                      Petugas PLP ter-assign yang aktif.
                     </p>
                   )}
                 </div>
@@ -1385,7 +1428,11 @@ export function BorrowingPageClient({
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-col gap-3">
-          <div className="grid gap-3 lg:grid-cols-2 xl:grid-cols-[minmax(0,18rem)_minmax(0,18rem)_1fr] xl:items-center">
+          <div
+            className={`grid gap-3 lg:grid-cols-2 ${
+              isMahasiswa ? "xl:grid-cols-3" : "xl:grid-cols-4"
+            } xl:items-center`}
+          >
             <Select
               value={statusFilter}
               onValueChange={(v) => {
@@ -1416,7 +1463,7 @@ export function BorrowingPageClient({
                   applyListFilters({ scope: v as "all" | "mine" | "my_labs" | "waiting_me", page: 1 })
                 }}
               >
-                <SelectTrigger className="w-full bg-card xl:w-56">
+                <SelectTrigger className="w-full bg-card">
                   <SelectValue placeholder="Filter Ruang Lingkup" />
                 </SelectTrigger>
                 <SelectContent>
@@ -1431,6 +1478,42 @@ export function BorrowingPageClient({
                 </SelectContent>
               </Select>
             )}
+            <Select
+              value={studyProgramFilter}
+              onValueChange={(v) => {
+                const value = v as "all" | "Sanitasi" | "Sanitasi Lingkungan"
+                setStudyProgramFilter(value)
+                applyListFilters({ studyProgram: value, page: 1 })
+              }}
+            >
+              <SelectTrigger className="w-full bg-card">
+                <SelectValue placeholder="Filter Prodi" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Semua Prodi</SelectItem>
+                {studyProgramOptions.map((program) => (
+                  <SelectItem key={program} value={program}>
+                    {program}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input
+                className="pl-9"
+                value={courseNameFilter}
+                placeholder="Cari mata kuliah..."
+                onChange={(e) => setCourseNameFilter(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    e.preventDefault()
+                    applyListFilters({ courseName: courseNameFilter, page: 1 })
+                  }
+                }}
+                onBlur={() => applyListFilters({ courseName: courseNameFilter, page: 1 })}
+              />
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -1713,6 +1796,10 @@ export function BorrowingPageClient({
                       <div className="sm:col-span-2">
                         <p className="text-muted-foreground">Keperluan</p>
                         <p className="text-foreground">{selectedBorrowing.purpose}</p>
+                      </div>
+                      <div>
+                        <p className="text-muted-foreground">Prodi</p>
+                        <p className="text-foreground">{selectedBorrowing.studyProgram}</p>
                       </div>
                       <div>
                         <p className="text-muted-foreground">Mata Kuliah</p>
