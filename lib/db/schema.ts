@@ -300,6 +300,8 @@ export const borrowingTransactions = pgTable(
     approvalMatrixId: uuid("approval_matrix_id"),
     status: borrowingStatusEnum("status").default("submitted").notNull(),
     requestedAt: timestamp("requested_at", { withTimezone: true }).defaultNow().notNull(),
+    plannedBorrowAt: timestamp("planned_borrow_at", { withTimezone: true }),
+    plannedReturnAt: timestamp("planned_return_at", { withTimezone: true }),
     approvedAt: timestamp("approved_at", { withTimezone: true }),
     handedOverAt: timestamp("handed_over_at", { withTimezone: true }),
     dueDate: timestamp("due_date", { withTimezone: true }),

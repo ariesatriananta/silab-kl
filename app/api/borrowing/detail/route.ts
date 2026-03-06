@@ -26,8 +26,12 @@ const querySchema = z.object({
   transactionId: z.string().uuid(),
 })
 
+function isValidDateValue(date: unknown): date is Date {
+  return date instanceof Date && !Number.isNaN(date.getTime())
+}
+
 function fmtDate(date: Date | null) {
-  if (!date) return null
+  if (!isValidDateValue(date)) return null
   return new Intl.DateTimeFormat("id-ID", {
     dateStyle: "medium",
     timeZone: "Asia/Jakarta",
@@ -35,12 +39,34 @@ function fmtDate(date: Date | null) {
 }
 
 function fmtDateTime(date: Date | null) {
-  if (!date) return null
+  if (!isValidDateValue(date)) return null
   return new Intl.DateTimeFormat("id-ID", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "Asia/Jakarta",
   }).format(date)
+}
+
+function getDisplayBorrowAt(input: {
+  status: ReturnType<typeof mapBorrowingDisplayStatus>
+  plannedBorrowAt: Date | null
+  handedOverAt: Date | null
+}) {
+  if (["active", "overdue", "partially_returned", "completed"].includes(input.status) && input.handedOverAt) {
+    return input.handedOverAt
+  }
+  return input.plannedBorrowAt ?? input.handedOverAt
+}
+
+function getDisplayReturnAt(input: {
+  status: ReturnType<typeof mapBorrowingDisplayStatus>
+  plannedReturnAt: Date | null
+  latestReturnedAt: Date | null
+}) {
+  if (input.status === "completed" && input.latestReturnedAt) {
+    return input.latestReturnedAt
+  }
+  return input.plannedReturnAt
 }
 
 function mapBorrowingDisplayStatus(input: {
@@ -49,7 +75,11 @@ function mapBorrowingDisplayStatus(input: {
 }) {
   const now = Date.now()
   const base = input.status
-  if ((base === "active" || base === "partially_returned") && input.dueDate && input.dueDate.getTime() < now) {
+  if (
+    (base === "active" || base === "partially_returned") &&
+    isValidDateValue(input.dueDate) &&
+    input.dueDate.getTime() < now
+  ) {
     return "overdue" as const
   }
   if (base === "submitted" || base === "pending_approval") return "pending" as const
@@ -154,6 +184,8 @@ export async function GET(request: Request) {
       requesterName: users.fullName,
       requesterNim: users.nim,
       requestedAt: borrowingTransactions.requestedAt,
+      plannedBorrowAt: borrowingTransactions.plannedBorrowAt,
+      plannedReturnAt: borrowingTransactions.plannedReturnAt,
       handedOverAt: borrowingTransactions.handedOverAt,
       dueDate: borrowingTransactions.dueDate,
       labName: labs.name,
@@ -281,6 +313,17 @@ export async function GET(request: Request) {
   const matrix = matrixRows[0] ?? null
   const userById = new Map(userRows.map((u) => [u.id, u.fullName]))
   const status = mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate })
+  const latestReturnedAt = returnRows[0]?.returnedAt ?? null
+  const displayBorrowAt = getDisplayBorrowAt({
+    status,
+    plannedBorrowAt: row.plannedBorrowAt,
+    handedOverAt: row.handedOverAt,
+  })
+  const displayReturnAt = getDisplayReturnAt({
+    status,
+    plannedReturnAt: row.plannedReturnAt,
+    latestReturnedAt,
+  })
   const plpAssignmentRows = await db
     .select({ userId: userLabAssignments.userId })
     .from(userLabAssignments)
@@ -347,8 +390,8 @@ export async function GET(request: Request) {
       groupName: row.groupName,
       advisorLecturerName: row.advisorLecturerName,
       requestedAt: fmtDate(row.requestedAt) ?? "-",
-      borrowDate: fmtDate(row.handedOverAt),
-      dueDate: fmtDate(row.dueDate),
+      borrowDate: fmtDateTime(displayBorrowAt),
+      dueDate: fmtDateTime(displayReturnAt),
       labName: row.labName,
       approvalsCount: approvalCount,
       pendingApprovalLabel: pendingApproval?.label ?? null,

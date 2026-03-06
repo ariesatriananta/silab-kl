@@ -14,6 +14,7 @@ import { db } from "@/lib/db/client"
 import {
   borrowingApprovals,
   borrowingApprovalMatrices,
+  borrowingReturns,
   borrowingTransactionItems,
   borrowingTransactions,
   labs,
@@ -68,12 +69,47 @@ function getMatrixRequiredApprover(input: {
   return null
 }
 
+function isValidDateValue(date: unknown): date is Date {
+  return date instanceof Date && !Number.isNaN(date.getTime())
+}
+
 function fmtDate(date: Date | null) {
-  if (!date) return null
+  if (!isValidDateValue(date)) return null
   return new Intl.DateTimeFormat("id-ID", {
     dateStyle: "medium",
     timeZone: "Asia/Jakarta",
   }).format(date)
+}
+
+function fmtDateTime(date: Date | null) {
+  if (!isValidDateValue(date)) return null
+  return new Intl.DateTimeFormat("id-ID", {
+    dateStyle: "medium",
+    timeStyle: "short",
+    timeZone: "Asia/Jakarta",
+  }).format(date)
+}
+
+function getDisplayBorrowAt(input: {
+  status: ReturnType<typeof mapBorrowingDisplayStatus>
+  plannedBorrowAt: Date | null
+  handedOverAt: Date | null
+}) {
+  if (["active", "overdue", "partially_returned", "completed"].includes(input.status) && input.handedOverAt) {
+    return input.handedOverAt
+  }
+  return input.plannedBorrowAt ?? input.handedOverAt
+}
+
+function getDisplayReturnAt(input: {
+  status: ReturnType<typeof mapBorrowingDisplayStatus>
+  plannedReturnAt: Date | null
+  latestReturnedAt: Date | null
+}) {
+  if (input.status === "completed" && input.latestReturnedAt) {
+    return input.latestReturnedAt
+  }
+  return input.plannedReturnAt
 }
 
 function mapBorrowingDisplayStatus(input: {
@@ -84,7 +120,7 @@ function mapBorrowingDisplayStatus(input: {
   const base = input.status
   if (
     (base === "active" || base === "partially_returned") &&
-    input.dueDate &&
+    isValidDateValue(input.dueDate) &&
     input.dueDate.getTime() < now
   ) {
     return "overdue" as const
@@ -312,6 +348,8 @@ async function getBorrowingData(
       requesterName: users.fullName,
       requesterNim: users.nim,
       requestedAt: borrowingTransactions.requestedAt,
+      plannedBorrowAt: borrowingTransactions.plannedBorrowAt,
+      plannedReturnAt: borrowingTransactions.plannedReturnAt,
       handedOverAt: borrowingTransactions.handedOverAt,
       dueDate: borrowingTransactions.dueDate,
       labName: labs.name,
@@ -348,7 +386,7 @@ async function getBorrowingData(
     }
   }
 
-  const [itemRows, approvalRows, matrixRowsForTx, plpAssignedLabRows] = await Promise.all([
+  const [itemRows, approvalRows, matrixRowsForTx, plpAssignedLabRows, returnSummaryRows] = await Promise.all([
     db
       .select({
         transactionId: borrowingTransactionItems.transactionId,
@@ -387,6 +425,14 @@ async function getBorrowingData(
       .innerJoin(users, eq(users.id, userLabAssignments.userId))
       .where(eq(users.role, "petugas_plp"))
       .groupBy(userLabAssignments.labId),
+    db
+      .select({
+        transactionId: borrowingReturns.transactionId,
+        latestReturnedAt: sql<Date | null>`max(${borrowingReturns.returnedAt})`,
+      })
+      .from(borrowingReturns)
+      .where(inArray(borrowingReturns.transactionId, txIds))
+      .groupBy(borrowingReturns.transactionId),
   ])
 
   const approverIds = Array.from(
@@ -419,8 +465,19 @@ async function getBorrowingData(
   const matrixById = new Map(matrixRowsForTx.map((row) => [row.id, row]))
   const plpAssignedLabSet = new Set(plpAssignedLabRows.map((row) => row.labId))
   const userById = new Map(approverUserRows.map((row) => [row.id, row.fullName]))
+  const latestReturnedAtByTx = new Map(returnSummaryRows.map((row) => [row.transactionId, row.latestReturnedAt]))
   const rows: BorrowingListRow[] = txRows.map((row) => {
     const status = mapBorrowingDisplayStatus({ status: row.status, dueDate: row.dueDate })
+    const displayBorrowAt = getDisplayBorrowAt({
+      status,
+      plannedBorrowAt: row.plannedBorrowAt,
+      handedOverAt: row.handedOverAt,
+    })
+    const displayReturnAt = getDisplayReturnAt({
+      status,
+      plannedReturnAt: row.plannedReturnAt,
+      latestReturnedAt: latestReturnedAtByTx.get(row.id) ?? null,
+    })
     const matrix = row.approvalMatrixId ? matrixById.get(row.approvalMatrixId) : undefined
     const requiredApprover = getMatrixRequiredApprover({
       approvalsCount: approvalCountByTx.get(row.id) ?? 0,
@@ -456,8 +513,8 @@ async function getBorrowingData(
       createdByUserId: row.createdByUserId,
       borrower: row.requesterName,
       nim: row.requesterNim,
-      borrowDate: fmtDate(row.handedOverAt),
-      dueDate: fmtDate(row.dueDate),
+      borrowDate: fmtDateTime(displayBorrowAt),
+      dueDate: fmtDateTime(displayReturnAt),
       status,
       purpose: row.purpose,
       studyProgram: row.studyProgram,

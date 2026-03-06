@@ -20,18 +20,44 @@ import {
 } from "@/lib/db/schema"
 import { BorrowingProofPrintButton } from "./print-button"
 
+function isValidDateValue(date: unknown): date is Date {
+  return date instanceof Date && !Number.isNaN(date.getTime())
+}
+
 function fmtDate(date: Date | null) {
-  if (!date) return "-"
+  if (!isValidDateValue(date)) return "-"
   return new Intl.DateTimeFormat("id-ID", { dateStyle: "medium", timeZone: "Asia/Jakarta" }).format(date)
 }
 
 function fmtDateTime(date: Date | null) {
-  if (!date) return "-"
+  if (!isValidDateValue(date)) return "-"
   return new Intl.DateTimeFormat("id-ID", {
     dateStyle: "medium",
     timeStyle: "short",
     timeZone: "Asia/Jakarta",
   }).format(date)
+}
+
+function getDisplayBorrowAt(input: {
+  status: string
+  plannedBorrowAt: Date | null
+  handedOverAt: Date | null
+}) {
+  if (["active", "overdue", "partially_returned", "completed"].includes(input.status) && input.handedOverAt) {
+    return input.handedOverAt
+  }
+  return input.plannedBorrowAt ?? input.handedOverAt
+}
+
+function getDisplayReturnAt(input: {
+  status: string
+  plannedReturnAt: Date | null
+  latestReturnedAt: Date | null
+}) {
+  if (input.status === "completed" && input.latestReturnedAt) {
+    return input.latestReturnedAt
+  }
+  return input.plannedReturnAt
 }
 
 type Role = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
@@ -63,6 +89,8 @@ export default async function BorrowingProofPage({
       groupName: borrowingTransactions.groupName,
       advisorLecturerName: borrowingTransactions.advisorLecturerName,
       requestedAt: borrowingTransactions.requestedAt,
+      plannedBorrowAt: borrowingTransactions.plannedBorrowAt,
+      plannedReturnAt: borrowingTransactions.plannedReturnAt,
       handedOverAt: borrowingTransactions.handedOverAt,
       dueDate: borrowingTransactions.dueDate,
       requesterName: users.fullName,
@@ -138,6 +166,17 @@ export default async function BorrowingProofPage({
       returnCondition: ret.returnCondition,
     })
   }
+  const latestReturnedAt = returnRows.length > 0 ? returnRows[returnRows.length - 1]!.returnedAt : null
+  const displayBorrowAt = getDisplayBorrowAt({
+    status: row.status,
+    plannedBorrowAt: row.plannedBorrowAt,
+    handedOverAt: row.handedOverAt,
+  })
+  const displayReturnAt = getDisplayReturnAt({
+    status: row.status,
+    plannedReturnAt: row.plannedReturnAt,
+    latestReturnedAt,
+  })
 
   const plpApproverName =
     approvals.find((a) => a.decision === "approved" && a.approverRole === "petugas_plp")?.approverName ?? "-"
@@ -237,8 +276,8 @@ export default async function BorrowingProofPage({
                   <th className="border border-black px-2 py-1 text-center w-15" rowSpan={2}>Paraf Petugas</th>
                 </tr>
                 <tr>
-                  <th className="border border-black px-2 py-1 text-center">Pinjam</th>
-                  <th className="border border-black px-2 py-1 text-center">Kembali</th>
+                  <th className="border border-black px-2 py-1 text-center">Mulai</th>
+                  <th className="border border-black px-2 py-1 text-center">Selesai</th>
                   <th className="border border-black px-2 py-1 text-center">Pinjam</th>
                   <th className="border border-black px-2 py-1 text-center">Kembali</th>
                 </tr>
@@ -263,10 +302,10 @@ export default async function BorrowingProofPage({
                       {item.qty} {item.itemType === "consumable" ? item.consumableUnit ?? "" : "unit"}
                     </td>
                     <td className="border border-black px-1 py-1 text-[10px] whitespace-nowrap text-center">
-                      {fmtDateTime(row.handedOverAt)}
+                      {fmtDateTime(displayBorrowAt)}
                     </td>
                     <td className="border border-black px-1 py-1 text-[10px] whitespace-nowrap text-center">
-                      {item.itemType === "tool_asset" ? fmtDateTime(returnInfo?.returnedAt ?? null) : "-"}
+                      {fmtDateTime(displayReturnAt)}
                     </td>
                     <td className="border border-black px-2 py-1 text-center">Baik</td>
                     <td className="border border-black px-2 py-1 text-center">

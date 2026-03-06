@@ -166,7 +166,7 @@ function getNextActionHint(input: {
     return {
       tone: "primary" as const,
       title: "Siap Serah Terima",
-      description: "Lanjutkan serah terima untuk mengaktifkan transaksi dan mengisi due date.",
+      description: "Lanjutkan serah terima untuk mengaktifkan transaksi dan mengisi rencana waktu selesai.",
     }
   }
   if (input.status === "active" || input.status === "overdue" || input.status === "partially_returned") {
@@ -383,6 +383,8 @@ export function BorrowingPageClient({
   const [materialTopic, setMaterialTopic] = useState("")
   const [semesterLabel, setSemesterLabel] = useState("")
   const [groupName, setGroupName] = useState("")
+  const [plannedBorrowAt, setPlannedBorrowAt] = useState("")
+  const [plannedReturnAt, setPlannedReturnAt] = useState("")
   const [approvalNote, setApprovalNote] = useState("")
   const [rejectNote, setRejectNote] = useState("")
   const [handoverNote, setHandoverNote] = useState("")
@@ -769,6 +771,8 @@ export function BorrowingPageClient({
       setMaterialTopic("")
       setSemesterLabel("")
       setGroupName("")
+      setPlannedBorrowAt("")
+      setPlannedReturnAt("")
     })
   }, [createState])
 
@@ -1038,6 +1042,31 @@ export function BorrowingPageClient({
                   {selectedApprovalRoute && selectedApprovalRoute.dosenApprovers.length > 0 && !selectedAdvisorApproverUserId && (
                     <p className="text-xs text-warning-foreground">Pilih dosen untuk menentukan approver tahap 1.</p>
                   )}
+                </div>
+              </div>
+
+              <div className="grid gap-3 lg:grid-cols-2">
+                <div className="grid gap-2">
+                  <Label htmlFor="plannedBorrowAt">Waktu Rencana Pakai</Label>
+                  <Input
+                    id="plannedBorrowAt"
+                    name="plannedBorrowAt"
+                    type="datetime-local"
+                    value={plannedBorrowAt}
+                    onChange={(e) => setPlannedBorrowAt(e.target.value)}
+                    required
+                  />
+                </div>
+                <div className="grid gap-2">
+                  <Label htmlFor="plannedReturnAt">Waktu Rencana Kembali</Label>
+                  <Input
+                    id="plannedReturnAt"
+                    name="plannedReturnAt"
+                    type="datetime-local"
+                    value={plannedReturnAt}
+                    onChange={(e) => setPlannedReturnAt(e.target.value)}
+                    required
+                  />
                 </div>
               </div>
 
@@ -1558,8 +1587,8 @@ export function BorrowingPageClient({
                   <TableHead className="font-semibold">Kode Transaksi</TableHead>
                   {!isMahasiswa && <TableHead className="font-semibold">Peminjam</TableHead>}
                   {!isMahasiswa && <TableHead className="font-semibold">NIM</TableHead>}
-                  <TableHead className="font-semibold">Tgl Pinjam</TableHead>
-                  <TableHead className="font-semibold">Tgl Kembali</TableHead>
+                  <TableHead className="font-semibold">Waktu Mulai</TableHead>
+                  <TableHead className="font-semibold">Waktu Selesai</TableHead>
                   <TableHead className="font-semibold">Status</TableHead>
                   {!isMahasiswa && <TableHead className="font-semibold">Menunggu Approval</TableHead>}
                   <TableHead className="font-semibold">Keperluan</TableHead>
@@ -1804,7 +1833,7 @@ export function BorrowingPageClient({
                         <p className="text-foreground">{selectedBorrowing.requestedAt}</p>
                       </div>
                       <div>
-                        <p className="text-muted-foreground">Tanggal Pinjam / Due Date</p>
+                        <p className="text-muted-foreground">Waktu Mulai / Waktu Selesai</p>
                         <p className="text-foreground">
                           {selectedBorrowing.borrowDate ?? "-"} / {selectedBorrowing.dueDate ?? "-"}
                         </p>
@@ -1955,7 +1984,7 @@ export function BorrowingPageClient({
                               <div className="text-sm text-foreground">Diserahkan oleh {event.handedOverByName}</div>
                               <span className="text-xs text-muted-foreground">{event.handedOverAt}</span>
                             </div>
-                            <p className="mt-1 text-xs text-muted-foreground">Due date: {event.dueDate}</p>
+                            <p className="mt-1 text-xs text-muted-foreground">Rencana selesai: {event.dueDate}</p>
                             {event.note && (
                               <p className="mt-1 text-xs text-muted-foreground">Catatan: {event.note}</p>
                             )}
@@ -2129,7 +2158,7 @@ export function BorrowingPageClient({
                     <div className="rounded-lg border border-primary/20 bg-primary/5 px-3 py-2 text-sm text-muted-foreground">
                       <p className="font-medium text-foreground">Serah Terima Transaksi</p>
                       <p className="mt-1">
-                      Serah terima akan mengaktifkan transaksi, mengisi due date, mengubah status alat menjadi dipinjam, dan mengurangi stok bahan.
+                      Serah terima akan mengaktifkan transaksi, mengisi rencana waktu selesai, mengubah status alat menjadi dipinjam, dan mengurangi stok bahan.
                       </p>
                     </div>
                     {handoverState && (
@@ -2141,7 +2170,7 @@ export function BorrowingPageClient({
                       <input type="hidden" name="transactionId" value={selectedBorrowing.id} />
                       <div className="grid gap-3 sm:grid-cols-[1fr_1.4fr]">
                         <div className="grid gap-2">
-                          <Label htmlFor="handoverDueDate">Due Date</Label>
+                          <Label htmlFor="handoverDueDate">Rencana Waktu Selesai</Label>
                           <Input id="handoverDueDate" name="dueDate" type="date" required />
                         </div>
                         <div className="grid gap-2">

@@ -63,6 +63,8 @@ const createBorrowingRequestSchema = z.object({
   materialTopic: z.string().trim().min(2, "Materi wajib diisi").max(200),
   semesterLabel: z.string().trim().min(1, "Semester wajib diisi").max(50),
   groupName: z.string().trim().min(1, "Kelompok wajib diisi").max(50),
+  plannedBorrowAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Waktu rencana pakai wajib diisi"),
+  plannedReturnAt: z.string().regex(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/, "Waktu rencana kembali wajib diisi"),
   advisorApproverUserId: z.string().uuid("Dosen wajib dipilih."),
   itemsPayload: z.string().optional(),
   toolAssetId: z.string().uuid().optional().or(z.literal("")),
@@ -92,6 +94,14 @@ function generateBorrowingCode() {
   const ymd = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}`
   const rnd = Math.floor(Math.random() * 9000) + 1000
   return `BRW-${ymd}-${rnd}`
+}
+
+function parseDateTimeLocalWib(dateTimeInput: string) {
+  const parsed = new Date(`${dateTimeInput}:00+07:00`)
+  if (Number.isNaN(parsed.getTime())) {
+    throw new Error("Format tanggal dan waktu tidak valid.")
+  }
+  return parsed
 }
 
 export type CreateBorrowingActionResult = {
@@ -168,6 +178,8 @@ function mapCreateBorrowingIssueMessage(issue: z.ZodIssue) {
     materialTopic: "Materi",
     semesterLabel: "Semester",
     groupName: "Kelompok",
+    plannedBorrowAt: "Waktu Rencana Pakai",
+    plannedReturnAt: "Waktu Rencana Kembali",
     advisorApproverUserId: "Dosen",
     toolAssetId: "Alat",
     consumableItemId: "Bahan Habis Pakai",
@@ -210,6 +222,8 @@ export async function createBorrowingRequestAction(
     materialTopic: formData.get("materialTopic"),
     semesterLabel: formData.get("semesterLabel"),
     groupName: formData.get("groupName"),
+    plannedBorrowAt: formData.get("plannedBorrowAt"),
+    plannedReturnAt: formData.get("plannedReturnAt"),
     advisorApproverUserId: formData.get("advisorApproverUserId"),
     itemsPayload: formData.get("itemsPayload")?.toString() || undefined,
     toolAssetId: formData.get("toolAssetId")?.toString() || undefined,
@@ -327,6 +341,22 @@ export async function createBorrowingRequestAction(
     return { ok: false, message: "Qty bahan harus minimal 1." }
   }
 
+  let plannedBorrowAt: Date
+  let plannedReturnAt: Date
+  try {
+    plannedBorrowAt = parseDateTimeLocalWib(parsed.data.plannedBorrowAt)
+    plannedReturnAt = parseDateTimeLocalWib(parsed.data.plannedReturnAt)
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Format waktu rencana tidak valid.",
+    }
+  }
+
+  if (plannedReturnAt.getTime() <= plannedBorrowAt.getTime()) {
+    return { ok: false, message: "Waktu rencana kembali harus lebih besar dari waktu rencana pakai." }
+  }
+
   const [toolAssetRows, consumableRows] = await Promise.all([
     toolAssetIds.length > 0
       ? db
@@ -384,6 +414,8 @@ export async function createBorrowingRequestAction(
           materialTopic: parsed.data.materialTopic.trim(),
           semesterLabel: parsed.data.semesterLabel.trim(),
           groupName: parsed.data.groupName.trim(),
+          plannedBorrowAt,
+          plannedReturnAt,
           advisorLecturerName: selectedAdvisorApprover.fullName,
           status: "pending_approval",
         })
