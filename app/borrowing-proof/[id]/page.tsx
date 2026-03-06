@@ -195,7 +195,7 @@ export default async function BorrowingProofPage({
                         <span>{row.studyProgram}</span>
                       </div>
                       <div className="flex">
-                        <span className="w-28 font-semibold">Semester</span>
+                        <span className="w-28 font-semibold">Semester - Kelas</span>
                         <span className="w-4">:</span>
                         <span>{row.semesterLabel}</span>
                       </div>

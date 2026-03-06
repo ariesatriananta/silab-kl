@@ -142,6 +142,7 @@ const roleLabel: Record<"admin" | "mahasiswa" | "petugas_plp" | "dosen", string>
 }
 
 const studyProgramOptions = ["Sanitasi", "Sanitasi Lingkungan"] as const
+const purposeOptions = ["Praktikum", "Penelitian", "Pengabdian Masyarakat"] as const
 
 const returnConditionLabel: Record<"baik" | "maintenance" | "damaged", string> = {
   baik: "Baik",
@@ -377,6 +378,7 @@ export function BorrowingPageClient({
   const [toolVisibleCount, setToolVisibleCount] = useState(30)
   const [consumableVisibleCount, setConsumableVisibleCount] = useState(30)
   const [courseName, setCourseName] = useState("")
+  const [purpose, setPurpose] = useState<string | undefined>(undefined)
   const [studyProgram, setStudyProgram] = useState<string | undefined>(undefined)
   const [materialTopic, setMaterialTopic] = useState("")
   const [semesterLabel, setSemesterLabel] = useState("")
@@ -761,6 +763,7 @@ export function BorrowingPageClient({
       setConsumableQuery("")
       setToolVisibleCount(30)
       setConsumableVisibleCount(30)
+      setPurpose(undefined)
       setStudyProgram(undefined)
       setCourseName("")
       setMaterialTopic("")
@@ -935,10 +938,21 @@ export function BorrowingPageClient({
                   <p className="text-xs text-destructive">{createInventoryError}</p>
                 )}
               </div>
-              <div className="grid gap-3 lg:grid-cols-4">
+              <div className="grid gap-3 lg:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="purpose">Keperluan</Label>
-                  <Input id="purpose" name="purpose" placeholder="Contoh: Praktikum Hematologi" required />
+                  <Select name="purpose" value={purpose} onValueChange={setPurpose} required>
+                    <SelectTrigger id="purpose" className="w-full">
+                      <SelectValue placeholder="Pilih keperluan" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {purposeOptions.map((item) => (
+                        <SelectItem key={item} value={item}>
+                          {item}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
                 </div>
                 <div className="grid gap-2">
                   <Label htmlFor="studyProgram">Prodi</Label>
@@ -955,6 +969,8 @@ export function BorrowingPageClient({
                     </SelectContent>
                   </Select>
                 </div>
+              </div>
+              <div className="grid gap-3 lg:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="courseName">Mata Kuliah</Label>
                   <Input
@@ -981,13 +997,13 @@ export function BorrowingPageClient({
 
               <div className="grid gap-3 sm:grid-cols-3">
                 <div className="grid gap-2">
-                  <Label htmlFor="semesterLabel">Semester</Label>
+                  <Label htmlFor="semesterLabel">Semester - Kelas</Label>
                   <Input
                     id="semesterLabel"
                     name="semesterLabel"
                     value={semesterLabel}
                     onChange={(e) => setSemesterLabel(e.target.value)}
-                    placeholder="Contoh: 4"
+                    placeholder="Contoh: 4 - B"
                     required
                   />
                 </div>
@@ -1247,7 +1263,7 @@ export function BorrowingPageClient({
                       : "border-warning/25 bg-warning/5"
                   }`}
                 >
-                  <p className="font-medium text-foreground">Rute Approval</p>
+                  <p className="font-medium text-foreground">Persetujuan</p>
                   <div className="mt-2 grid gap-2 sm:grid-cols-2">
                     <div className="rounded-lg border border-border/60 bg-card px-3 py-2">
                       <p className="text-xs uppercase tracking-wide text-muted-foreground">Tahap 1</p>
@@ -1413,7 +1429,7 @@ export function BorrowingPageClient({
                 <div className="mt-2 space-y-1.5 text-sm text-muted-foreground">
                   <p>1. Pilih <span className="font-medium text-foreground">Laboratorium</span> yang sesuai kebutuhan praktikum.</p>
                   <p>2. Isi data akademik utama: <span className="font-medium text-foreground">Keperluan, Mata Kuliah, Materi, Semester, dan Kelompok</span>.</p>
-                  <p>3. Pilih alat/bahan secukupnya, lalu cek <span className="font-medium text-foreground">Rute Approval</span> sebelum kirim.</p>
+                  <p>3. Pilih alat/bahan secukupnya, lalu cek <span className="font-medium text-foreground">Persetujuan</span> sebelum kirim.</p>
                   <p>4. Gunakan detail transaksi untuk memantau approval, serah terima, dan pengembalian.</p>
                 </div>
               </div>

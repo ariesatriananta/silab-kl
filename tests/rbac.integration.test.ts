@@ -13,10 +13,10 @@ loadDotenv()
 
 const db = createDb()
 
-test("RBAC route guard: mahasiswa diarahkan ke student-tools kecuali halaman yang diizinkan", () => {
+test("RBAC route guard: mahasiswa diarahkan ke peminjaman kecuali halaman yang diizinkan", () => {
   assert.equal(
     getDashboardAccessRedirect({ role: "mahasiswa", pathname: "/dashboard", mustChangePassword: false }),
-    "/dashboard/student-tools",
+    "/dashboard/borrowing",
   )
   assert.equal(
     getDashboardAccessRedirect({

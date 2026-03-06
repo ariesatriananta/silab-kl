@@ -180,7 +180,7 @@ export function ApprovalMatrixPageClient({ rows }: { rows: ApprovalMatrixRow[] }
               <input type="hidden" name="step1ApproverUserId" value={step1ApproverUserId} />
 
               <div className="rounded-xl border border-border/50 bg-muted/20 p-3">
-                <p className="text-sm font-medium text-foreground">Rute Approval</p>
+                <p className="text-sm font-medium text-foreground">Persetujuan</p>
                 <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
                   <Badge variant="secondary">1. Dosen</Badge>
                   <CheckCircle2 className="size-4" />

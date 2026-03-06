@@ -400,7 +400,7 @@ async function getDashboardData(role: DashboardRole, userId: string) {
 export default async function DashboardPage() {
   const session = await getServerAuthSession()
   if (!session?.user?.id || !session.user.role) redirect("/")
-  if (session.user.role === "mahasiswa") redirect("/dashboard/student-tools")
+  if (session.user.role === "mahasiswa") redirect("/dashboard/borrowing")
   if (session.user.role === "dosen") redirect("/dashboard/borrowing")
 
   const {
