@@ -150,6 +150,17 @@ const returnConditionLabel: Record<"baik" | "maintenance" | "damaged", string> =
   damaged: "Rusak",
 }
 
+function splitDateTimeValue(value: string) {
+  if (!value) {
+    return { date: "", time: "08:00" }
+  }
+  const [datePart = "", timePart = ""] = value.split("T")
+  return {
+    date: datePart,
+    time: timePart.length >= 5 ? timePart.slice(0, 5) : "08:00",
+  }
+}
+
 function getNextActionHint(input: {
   status: DisplayStatus
   approvalsCount?: number
@@ -383,8 +394,10 @@ export function BorrowingPageClient({
   const [materialTopic, setMaterialTopic] = useState("")
   const [semesterLabel, setSemesterLabel] = useState("")
   const [groupName, setGroupName] = useState("")
-  const [plannedBorrowAt, setPlannedBorrowAt] = useState("")
-  const [plannedReturnAt, setPlannedReturnAt] = useState("")
+  const [plannedBorrowDate, setPlannedBorrowDate] = useState("")
+  const [plannedBorrowTime, setPlannedBorrowTime] = useState("08:00")
+  const [plannedReturnDate, setPlannedReturnDate] = useState("")
+  const [plannedReturnTime, setPlannedReturnTime] = useState("08:00")
   const [approvalNote, setApprovalNote] = useState("")
   const [rejectNote, setRejectNote] = useState("")
   const [handoverNote, setHandoverNote] = useState("")
@@ -474,6 +487,17 @@ export function BorrowingPageClient({
     () => new Map(labConsumables.map((c) => [c.id, c])),
     [labConsumables],
   )
+  const scheduleTimeOptions = useMemo(() => {
+    const options: string[] = []
+    for (let hour = 0; hour < 24; hour += 1) {
+      for (const minute of [0, 15, 30, 45]) {
+        options.push(`${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`)
+      }
+    }
+    return options
+  }, [])
+  const plannedBorrowAt = plannedBorrowDate ? `${plannedBorrowDate}T${plannedBorrowTime}` : ""
+  const plannedReturnAt = plannedReturnDate ? `${plannedReturnDate}T${plannedReturnTime}` : ""
   const selectedTools = useMemo(
     () => selectedToolIds.map((id) => toolById.get(id)).filter(Boolean) as BorrowingCreateToolOption[],
     [selectedToolIds, toolById],
@@ -771,8 +795,10 @@ export function BorrowingPageClient({
       setMaterialTopic("")
       setSemesterLabel("")
       setGroupName("")
-      setPlannedBorrowAt("")
-      setPlannedReturnAt("")
+      setPlannedBorrowDate("")
+      setPlannedBorrowTime("08:00")
+      setPlannedReturnDate("")
+      setPlannedReturnTime("08:00")
     })
   }, [createState])
 
@@ -1046,29 +1072,57 @@ export function BorrowingPageClient({
               </div>
 
               <div className="grid gap-3 lg:grid-cols-2">
-                <div className="grid gap-2">
-                  <Label htmlFor="plannedBorrowAt">Waktu Rencana Pakai</Label>
-                  <Input
-                    id="plannedBorrowAt"
-                    name="plannedBorrowAt"
-                    type="datetime-local"
-                    value={plannedBorrowAt}
-                    onChange={(e) => setPlannedBorrowAt(e.target.value)}
-                    required
-                  />
+                <div className="grid gap-3">
+                  <Label>Waktu Rencana Pakai</Label>
+                  <div className="grid gap-3 sm:grid-cols-[1.15fr_0.85fr]">
+                    <Input
+                      id="plannedBorrowDate"
+                      type="date"
+                      value={plannedBorrowDate}
+                      onChange={(e) => setPlannedBorrowDate(e.target.value)}
+                      required
+                    />
+                    <Select value={plannedBorrowTime} onValueChange={setPlannedBorrowTime}>
+                      <SelectTrigger id="plannedBorrowTime" className="w-full">
+                        <SelectValue placeholder="Pilih jam mulai" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {scheduleTimeOptions.map((time) => (
+                          <SelectItem key={time} value={time}>
+                            {time}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
-                <div className="grid gap-2">
-                  <Label htmlFor="plannedReturnAt">Waktu Rencana Kembali</Label>
-                  <Input
-                    id="plannedReturnAt"
-                    name="plannedReturnAt"
-                    type="datetime-local"
-                    value={plannedReturnAt}
-                    onChange={(e) => setPlannedReturnAt(e.target.value)}
-                    required
-                  />
+                <div className="grid gap-3">
+                  <Label>Waktu Rencana Kembali</Label>
+                  <div className="grid gap-3 sm:grid-cols-[1.15fr_0.85fr]">
+                    <Input
+                      id="plannedReturnDate"
+                      type="date"
+                      value={plannedReturnDate}
+                      onChange={(e) => setPlannedReturnDate(e.target.value)}
+                      required
+                    />
+                    <Select value={plannedReturnTime} onValueChange={setPlannedReturnTime}>
+                      <SelectTrigger id="plannedReturnTime" className="w-full">
+                        <SelectValue placeholder="Pilih jam selesai" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {scheduleTimeOptions.map((time) => (
+                          <SelectItem key={time} value={time}>
+                            {time}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
                 </div>
               </div>
+              <input type="hidden" name="plannedBorrowAt" value={plannedBorrowAt} />
+              <input type="hidden" name="plannedReturnAt" value={plannedReturnAt} />
 
               <Separator />
 

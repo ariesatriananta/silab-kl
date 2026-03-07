@@ -1,8 +1,9 @@
 "use client"
 
 import Link from "next/link"
-import { useState } from "react"
-import { ArrowRight, Search, Wrench } from "lucide-react"
+import { useDeferredValue, useEffect, useState, useTransition } from "react"
+import { usePathname, useRouter, useSearchParams } from "next/navigation"
+import { ArrowLeft, ArrowRight, Search, Wrench } from "lucide-react"
 
 import { Badge } from "@/components/ui/badge"
 import { Button } from "@/components/ui/button"
@@ -29,20 +30,83 @@ export type StudentToolCatalogRow = {
   category: string
 }
 
-export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[] }) {
-  const [search, setSearch] = useState("")
-  const [categoryFilter, setCategoryFilter] = useState("all")
+export type StudentToolCatalogFilters = {
+  search: string
+  category: string
+  filteredAvailableCount: number
+  filteredTotalUnits: number
+  filteredTotalModels: number
+}
 
-  const categories = Array.from(new Set(data.map((t) => t.category)))
+export type StudentToolCatalogPagination = {
+  page: number
+  pageSize: number
+  totalItems: number
+  totalPages: number
+  showingFrom: number
+  showingTo: number
+}
 
-  const filtered = data.filter((tool) => {
-    const matchesSearch = tool.name.toLowerCase().includes(search.toLowerCase())
-    const matchesCategory = categoryFilter === "all" || tool.category === categoryFilter
-    return matchesSearch && matchesCategory
-  })
-  const availableCount = data.filter((t) => t.available > 0).length
-  const totalUnits = data.reduce((sum, t) => sum + t.total, 0)
-  const filteredAvailableCount = filtered.filter((t) => t.available > 0).length
+export function StudentToolsPageClient({
+  data,
+  categories,
+  filters,
+  pagination,
+}: {
+  data: StudentToolCatalogRow[]
+  categories: string[]
+  filters: StudentToolCatalogFilters
+  pagination: StudentToolCatalogPagination
+}) {
+  const router = useRouter()
+  const pathname = usePathname()
+  const searchParams = useSearchParams()
+  const [isPending, startTransition] = useTransition()
+
+  const [search, setSearch] = useState(filters.search)
+  const deferredSearch = useDeferredValue(search)
+
+  useEffect(() => {
+    setSearch(filters.search)
+  }, [filters.search])
+
+  useEffect(() => {
+    const nextSearch = deferredSearch.trim()
+    const currentSearch = searchParams.get("search") ?? ""
+    if (nextSearch === currentSearch) return
+
+    const handle = setTimeout(() => {
+      const params = new URLSearchParams(searchParams.toString())
+      if (nextSearch) params.set("search", nextSearch)
+      else params.delete("search")
+      params.delete("page")
+
+      startTransition(() => {
+        router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, {
+          scroll: false,
+        })
+      })
+    }, 300)
+
+    return () => clearTimeout(handle)
+  }, [deferredSearch, pathname, router, searchParams])
+
+  function updateQuery(updater: (params: URLSearchParams) => void) {
+    const params = new URLSearchParams(searchParams.toString())
+    updater(params)
+    startTransition(() => {
+      router.replace(params.toString() ? `${pathname}?${params.toString()}` : pathname, {
+        scroll: false,
+      })
+    })
+  }
+
+  function resetFilters() {
+    setSearch("")
+    startTransition(() => {
+      router.replace(pathname, { scroll: false })
+    })
+  }
 
   return (
     <div className="min-w-0 overflow-x-hidden flex flex-col gap-6 p-4 lg:p-6">
@@ -58,11 +122,11 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
             <div className="grid grid-cols-2 gap-2 text-sm sm:w-[320px]">
               <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2">
                 <p className="text-xs text-muted-foreground">Model Tersedia</p>
-                <p className="text-lg font-semibold text-foreground">{availableCount}</p>
+                <p className="text-lg font-semibold text-foreground">{filters.filteredAvailableCount}</p>
               </div>
               <div className="rounded-lg border border-border/50 bg-background/70 px-3 py-2">
                 <p className="text-xs text-muted-foreground">Total Unit</p>
-                <p className="text-lg font-semibold text-foreground">{totalUnits}</p>
+                <p className="text-lg font-semibold text-foreground">{filters.filteredTotalUnits}</p>
               </div>
             </div>
           </div>
@@ -82,8 +146,8 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
                 Info Status
               </p>
               <p className="mt-1 text-sm text-foreground">
-                <span className="font-medium">{filteredAvailableCount}</span> model tersedia dari{" "}
-                <span className="font-medium">{filtered.length}</span> hasil filter saat ini.
+                <span className="font-medium">{filters.filteredAvailableCount}</span> model tersedia dari{" "}
+                <span className="font-medium">{filters.filteredTotalModels}</span> hasil filter saat ini.
               </p>
               <p className="mt-1 text-xs text-muted-foreground">
                 Pengajuan akan masuk ke alur approval petugas sebelum serah terima.
@@ -103,8 +167,17 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
             className="pl-9 bg-card"
           />
         </div>
-        <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-          <SelectTrigger className="w-full sm:w-44 bg-card">
+        <Select
+          value={filters.category}
+          onValueChange={(value) =>
+            updateQuery((params) => {
+              if (value === "all") params.delete("category")
+              else params.set("category", value)
+              params.delete("page")
+            })
+          }
+        >
+          <SelectTrigger className="w-full sm:w-52 bg-card">
             <SelectValue placeholder="Kategori" />
           </SelectTrigger>
           <SelectContent>
@@ -140,17 +213,25 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
         </div>
       </div>
 
-      <div className="flex items-center justify-between rounded-xl border border-border/50 bg-card/70 px-4 py-3 text-sm">
-        <p className="text-muted-foreground">
-          Menampilkan <span className="font-medium text-foreground">{filtered.length}</span> model alat
-        </p>
+      <div className="flex flex-col gap-3 rounded-xl border border-border/50 bg-card/70 px-4 py-3 text-sm sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <p className="text-muted-foreground">
+            Menampilkan <span className="font-medium text-foreground">{pagination.showingFrom}</span>
+            {" - "}
+            <span className="font-medium text-foreground">{pagination.showingTo}</span> dari{" "}
+            <span className="font-medium text-foreground">{pagination.totalItems}</span> model alat
+          </p>
+          <p className="mt-1 text-xs text-muted-foreground">
+            Data katalog sekarang sudah dibatasi per halaman agar tetap ringan saat data banyak.
+          </p>
+        </div>
         <p className="text-xs text-muted-foreground">
-          {categoryFilter === "all" ? "Semua kategori" : `Kategori: ${categoryFilter}`}
+          {filters.category === "all" ? "Semua kategori" : `Kategori: ${filters.category}`}
         </p>
       </div>
 
       <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
-        {filtered.map((tool) => {
+        {data.map((tool) => {
           const isAvailable = tool.available > 0
           return (
             <Card
@@ -212,7 +293,48 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
         })}
       </div>
 
-      {filtered.length === 0 && (
+      {pagination.totalPages > 1 && (
+        <div className="flex flex-col gap-3 rounded-xl border border-border/50 bg-card/70 px-4 py-3 sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-sm text-muted-foreground">
+            Halaman <span className="font-medium text-foreground">{pagination.page}</span> dari{" "}
+            <span className="font-medium text-foreground">{pagination.totalPages}</span>
+          </p>
+          <div className="flex items-center gap-2">
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pagination.page <= 1 || isPending}
+              onClick={() =>
+                updateQuery((params) => {
+                  const nextPage = Math.max(1, pagination.page - 1)
+                  if (nextPage <= 1) params.delete("page")
+                  else params.set("page", String(nextPage))
+                })
+              }
+            >
+              <ArrowLeft className="size-4" />
+              Sebelumnya
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={pagination.page >= pagination.totalPages || isPending}
+              onClick={() =>
+                updateQuery((params) => {
+                  params.set("page", String(pagination.page + 1))
+                })
+              }
+            >
+              Berikutnya
+              <ArrowRight className="size-4" />
+            </Button>
+          </div>
+        </div>
+      )}
+
+      {pagination.totalItems === 0 && (
         <Empty className="border border-border/50 bg-muted/20 py-10">
           <EmptyHeader>
             <EmptyMedia variant="icon">
@@ -224,15 +346,7 @@ export function StudentToolsPageClient({ data }: { data: StudentToolCatalogRow[]
             </EmptyDescription>
           </EmptyHeader>
           <EmptyContent>
-            <Button
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => {
-                setSearch("")
-                setCategoryFilter("all")
-              }}
-            >
+            <Button type="button" variant="outline" size="sm" onClick={resetFilters}>
               Reset Filter
             </Button>
           </EmptyContent>

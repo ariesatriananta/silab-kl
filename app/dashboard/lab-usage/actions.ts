@@ -1,12 +1,18 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { and, eq, gt, lt, ne } from "drizzle-orm"
+import { and, eq, gt, inArray, lt, ne } from "drizzle-orm"
 import { z } from "zod"
 
 import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
-import { labSchedules, labUsageAttendances, labUsageLogs, userLabAssignments } from "@/lib/db/schema"
+import {
+  labRoomBookingRequests,
+  labSchedules,
+  labUsageAttendances,
+  labUsageLogs,
+  userLabAssignments,
+} from "@/lib/db/schema"
 import { writeSecurityAuditLog } from "@/lib/security/audit"
 
 type ActionResult = { ok: boolean; message: string }
@@ -42,6 +48,11 @@ const usageLogSchema = z.object({
   endTime: z.string().regex(/^\d{2}:\d{2}$/),
   note: z.string().max(500).optional(),
   attendanceText: z.string().max(20000).optional(),
+})
+
+const bookingDecisionSchema = z.object({
+  requestId: z.string().uuid(),
+  note: z.string().max(500).optional(),
 })
 
 function parseAttendanceLines(text: string | undefined) {
@@ -106,6 +117,36 @@ async function findOverlappingSchedule(params: {
       groupName: true,
       scheduledStartAt: true,
       scheduledEndAt: true,
+    },
+  })
+}
+
+async function findOverlappingBookingRequest(params: {
+  labId: string
+  startAt: Date
+  endAt: Date
+  excludeRequestId?: string
+}) {
+  const conditions = [
+    eq(labRoomBookingRequests.labId, params.labId),
+    inArray(labRoomBookingRequests.status, ["pending", "approved"]),
+    lt(labRoomBookingRequests.plannedStartAt, params.endAt),
+    gt(labRoomBookingRequests.plannedEndAt, params.startAt),
+  ]
+  if (params.excludeRequestId) {
+    conditions.push(ne(labRoomBookingRequests.id, params.excludeRequestId))
+  }
+
+  return db.query.labRoomBookingRequests.findFirst({
+    where: and(...conditions),
+    columns: {
+      id: true,
+      code: true,
+      courseName: true,
+      groupName: true,
+      plannedStartAt: true,
+      plannedEndAt: true,
+      status: true,
     },
   })
 }
@@ -360,26 +401,26 @@ export async function createLabUsageLogAction(
     return { ok: false, message: "Jumlah baris absensi harus sama dengan jumlah mahasiswa." }
   }
 
-  await db.transaction(async (tx) => {
-    const [usage] = await tx
-      .insert(labUsageLogs)
-      .values({
-        labId: parsed.data.labId,
-        scheduleId: !parsed.data.scheduleId || parsed.data.scheduleId === "none" ? null : parsed.data.scheduleId,
-        courseName: parsed.data.courseName.trim(),
-        groupName: parsed.data.groupName.trim(),
-        studentCount: parsed.data.studentCount,
-        startedAt,
-        endedAt,
-        createdByUserId: auth.session.user.id,
-        note: parsed.data.note?.trim() || null,
-      })
-      .returning({ id: labUsageLogs.id })
+  const [usage] = await db
+    .insert(labUsageLogs)
+    .values({
+      labId: parsed.data.labId,
+      scheduleId: !parsed.data.scheduleId || parsed.data.scheduleId === "none" ? null : parsed.data.scheduleId,
+      courseName: parsed.data.courseName.trim(),
+      groupName: parsed.data.groupName.trim(),
+      studentCount: parsed.data.studentCount,
+      startedAt,
+      endedAt,
+      createdByUserId: auth.session.user.id,
+      note: parsed.data.note?.trim() || null,
+    })
+    .returning({ id: labUsageLogs.id })
 
-    if (!usage) throw new Error("Gagal menyimpan riwayat penggunaan lab.")
+  if (!usage) return { ok: false, message: "Gagal menyimpan riwayat penggunaan lab." }
 
+  try {
     if (attendanceRows.length > 0) {
-      await tx.insert(labUsageAttendances).values(
+      await db.insert(labUsageAttendances).values(
         attendanceRows.map((row) => ({
           usageLogId: usage.id,
           attendeeName: row.attendeeName,
@@ -387,7 +428,10 @@ export async function createLabUsageLogAction(
         })),
       )
     }
-  })
+  } catch {
+    await db.delete(labUsageLogs).where(eq(labUsageLogs.id, usage.id))
+    return { ok: false, message: "Riwayat penggunaan tersimpan parsial dan dibatalkan. Coba ulangi lagi." }
+  }
 
   await writeSecurityAuditLog({
     category: "lab_usage",
@@ -402,6 +446,151 @@ export async function createLabUsageLogAction(
 
   revalidatePath("/dashboard/lab-usage")
   return { ok: true, message: "Riwayat penggunaan lab berhasil dicatat." }
+}
+
+export async function approveLabBookingRequestAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = bookingDecisionSchema.safeParse({
+    requestId: formData.get("requestId"),
+    note: formData.get("note")?.toString() || undefined,
+  })
+  if (!parsed.success) return { ok: false, message: "Data approval booking tidak valid." }
+
+  const session = await getServerAuthSession()
+  if (!session?.user?.id || !session.user.role) return { ok: false, message: "Sesi tidak valid." }
+  if (session.user.role !== "admin" && session.user.role !== "petugas_plp") {
+    return { ok: false, message: "Akses ditolak." }
+  }
+
+  const request = await db.query.labRoomBookingRequests.findFirst({
+    where: eq(labRoomBookingRequests.id, parsed.data.requestId),
+    columns: {
+      id: true,
+      labId: true,
+      status: true,
+      courseName: true,
+      groupName: true,
+      advisorLecturerName: true,
+      plannedStartAt: true,
+      plannedEndAt: true,
+    },
+  })
+  if (!request) return { ok: false, message: "Pengajuan booking tidak ditemukan." }
+  if (request.status !== "pending") return { ok: false, message: "Pengajuan ini sudah diproses." }
+
+  const auth = await ensureNonMahasiswaAndLabAccess(request.labId)
+  if ("error" in auth) return { ok: false, message: auth.error ?? "Akses ditolak." }
+
+  const [overlapSchedule, overlapBooking] = await Promise.all([
+    findOverlappingSchedule({
+      labId: request.labId,
+      startAt: request.plannedStartAt,
+      endAt: request.plannedEndAt,
+    }),
+    findOverlappingBookingRequest({
+      labId: request.labId,
+      startAt: request.plannedStartAt,
+      endAt: request.plannedEndAt,
+      excludeRequestId: request.id,
+    }),
+  ])
+
+  if (overlapSchedule) {
+    return {
+      ok: false,
+      message: `Approval gagal karena bentrok dengan jadwal final "${overlapSchedule.courseName} - ${overlapSchedule.groupName}".`,
+    }
+  }
+
+  if (overlapBooking) {
+    return {
+      ok: false,
+      message: `Approval gagal karena slot bentrok dengan pengajuan ${overlapBooking.status === "pending" ? "lain yang masih pending" : "lain yang sudah disetujui"}.`,
+    }
+  }
+
+  const [schedule] = await db
+    .insert(labSchedules)
+    .values({
+      labId: request.labId,
+      courseName: request.courseName,
+      groupName: request.groupName,
+      instructorName: request.advisorLecturerName,
+      scheduledStartAt: request.plannedStartAt,
+      scheduledEndAt: request.plannedEndAt,
+      capacity: 1,
+      enrolledCount: 1,
+      createdByUserId: auth.session.user.id,
+    })
+    .returning({ id: labSchedules.id })
+
+  if (!schedule) {
+    return { ok: false, message: "Gagal membuat jadwal final dari booking." }
+  }
+
+  try {
+    await db
+      .update(labRoomBookingRequests)
+      .set({
+        status: "approved",
+        approvedByUserId: auth.session.user.id,
+        approvedAt: new Date(),
+        scheduleId: schedule.id,
+        updatedAt: new Date(),
+      })
+      .where(eq(labRoomBookingRequests.id, request.id))
+  } catch {
+    await db.delete(labSchedules).where(eq(labSchedules.id, schedule.id))
+    return { ok: false, message: "Approval gagal disimpan. Jadwal final dibatalkan otomatis." }
+  }
+
+  revalidatePath("/dashboard/lab-usage")
+  revalidatePath("/dashboard/student-lab-schedule")
+  return { ok: true, message: "Booking ruang disetujui dan jadwal final berhasil dibuat." }
+}
+
+export async function rejectLabBookingRequestAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const parsed = bookingDecisionSchema.safeParse({
+    requestId: formData.get("requestId"),
+    note: formData.get("note")?.toString() || undefined,
+  })
+  if (!parsed.success) return { ok: false, message: "Data penolakan booking tidak valid." }
+
+  const session = await getServerAuthSession()
+  if (!session?.user?.id || !session.user.role) return { ok: false, message: "Sesi tidak valid." }
+  if (session.user.role !== "admin" && session.user.role !== "petugas_plp") {
+    return { ok: false, message: "Akses ditolak." }
+  }
+
+  const request = await db.query.labRoomBookingRequests.findFirst({
+    where: eq(labRoomBookingRequests.id, parsed.data.requestId),
+    columns: { id: true, labId: true, status: true },
+  })
+  if (!request) return { ok: false, message: "Pengajuan booking tidak ditemukan." }
+  if (request.status !== "pending") return { ok: false, message: "Pengajuan ini sudah diproses." }
+
+  const auth = await ensureNonMahasiswaAndLabAccess(request.labId)
+  if ("error" in auth) return { ok: false, message: auth.error ?? "Akses ditolak." }
+
+  await db
+    .update(labRoomBookingRequests)
+    .set({
+      status: "rejected",
+      rejectionReason: parsed.data.note?.trim() || "Ditolak oleh Petugas PLP",
+      rejectedByUserId: auth.session.user.id,
+      rejectedAt: new Date(),
+      updatedAt: new Date(),
+    })
+    .where(eq(labRoomBookingRequests.id, request.id))
+
+  revalidatePath("/dashboard/lab-usage")
+  revalidatePath("/dashboard/student-lab-schedule")
+  return { ok: true, message: "Pengajuan booking berhasil ditolak." }
 }
 
 export type LabUsageActionResult = ActionResult

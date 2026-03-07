@@ -2,12 +2,26 @@
 
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react"
-import { CalendarDays, Clock, Eye, GraduationCap, Pencil, Plus, Trash2, Users } from "lucide-react"
+import {
+  CalendarDays,
+  CheckCircle2,
+  Clock,
+  Eye,
+  GraduationCap,
+  Pencil,
+  Plus,
+  Printer,
+  Trash2,
+  Users,
+  XCircle,
+} from "lucide-react"
 
 import {
+  approveLabBookingRequestAction,
   createLabScheduleAction,
   createLabUsageLogAction,
   deleteLabScheduleWithFeedbackAction,
+  rejectLabBookingRequestAction,
   type LabUsageActionResult,
   updateLabScheduleAction,
 } from "@/app/dashboard/lab-usage/actions"
@@ -60,6 +74,7 @@ export type LabUsageScheduleRow = {
 }
 export type LabUsageHistoryRow = {
   id: string
+  displayId: string
   labId: string
   labName: string
   courseName: string
@@ -75,6 +90,24 @@ export type LabUsageHistoryRow = {
   }>
 }
 export type LabUsageAttendanceRow = LabUsageHistoryRow["attendance"][number]
+export type LabUsageBookingRequestRow = {
+  id: string
+  code: string
+  labId: string
+  labName: string
+  requesterName: string
+  requesterNim: string | null
+  courseName: string
+  materialTopic: string
+  studyProgram: string
+  semesterClassLabel: string
+  groupName: string
+  advisorLecturerName: string
+  plannedDate: string
+  plannedTime: string
+  requestedAt: string
+  note: string | null
+}
 
 type Role = "admin" | "petugas_plp"
 
@@ -91,23 +124,29 @@ export function LabUsagePageClient({
   labs,
   schedules,
   history,
+  bookingRequests,
   historyPagination,
 }: {
   role: Role
   labs: LabUsageLabOption[]
   schedules: LabUsageScheduleRow[]
   history: LabUsageHistoryRow[]
+  bookingRequests: LabUsageBookingRequestRow[]
   historyPagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [historyPagingPending, startHistoryPagingTransition] = useTransition()
-  const [activeTab, setActiveTab] = useState<"schedule" | "history">("schedule")
+  const [activeTab, setActiveTab] = useState<"booking" | "schedule" | "history">(
+    bookingRequests.length > 0 ? "booking" : "schedule",
+  )
   const [createScheduleOpen, setCreateScheduleOpen] = useState(false)
   const [createUsageOpen, setCreateUsageOpen] = useState(false)
   const [editingSchedule, setEditingSchedule] = useState<LabUsageScheduleRow | null>(null)
   const [deletingSchedule, setDeletingSchedule] = useState<LabUsageScheduleRow | null>(null)
+  const [approveTarget, setApproveTarget] = useState<LabUsageBookingRequestRow | null>(null)
+  const [rejectTarget, setRejectTarget] = useState<LabUsageBookingRequestRow | null>(null)
   const [scheduleLabId, setScheduleLabId] = useState(labs[0]?.id ?? "")
   const [usageLabId, setUsageLabId] = useState(labs[0]?.id ?? "")
   const [usageScheduleId, setUsageScheduleId] = useState<string>("none")
@@ -135,6 +174,14 @@ export function LabUsagePageClient({
     deleteLabScheduleWithFeedbackAction,
     null as LabUsageActionResult | null,
   )
+  const [approveBookingState, approveBookingAction, approveBookingPending] = useActionState(
+    approveLabBookingRequestAction,
+    null as LabUsageActionResult | null,
+  )
+  const [rejectBookingState, rejectBookingAction, rejectBookingPending] = useActionState(
+    rejectLabBookingRequestAction,
+    null as LabUsageActionResult | null,
+  )
 
   const { toast } = useToast()
   const shownToastKeys = useRef<string[]>([])
@@ -145,8 +192,8 @@ export function LabUsagePageClient({
   )
   const usageSummary = {
     schedules: schedules.length,
+    bookingRequests: bookingRequests.length,
     history: history.length,
-    fullSchedules: schedules.filter((s) => s.enrolledCount >= s.capacity).length,
     noAttendanceLogs: history.filter((h) => h.attendance.length === 0).length,
   }
   const scheduleTimeOptions = useMemo(() => {
@@ -189,6 +236,12 @@ export function LabUsagePageClient({
       deleteScheduleState
         ? { key: `schedule-delete:${deleteScheduleState.ok}:${deleteScheduleState.message}`, title: "Jadwal Lab", ...deleteScheduleState }
         : null,
+      approveBookingState
+        ? { key: `booking-approve:${approveBookingState.ok}:${approveBookingState.message}`, title: "Booking Ruang", ...approveBookingState }
+        : null,
+      rejectBookingState
+        ? { key: `booking-reject:${rejectBookingState.ok}:${rejectBookingState.message}`, title: "Booking Ruang", ...rejectBookingState }
+        : null,
     ].filter(Boolean) as Array<{ key: string; title: string; ok: boolean; message: string }>
 
     for (const s of states) {
@@ -200,7 +253,15 @@ export function LabUsagePageClient({
         variant: s.ok ? "default" : "destructive",
       })
     }
-  }, [createScheduleState, updateScheduleState, createUsageState, deleteScheduleState, toast])
+  }, [
+    approveBookingState,
+    createScheduleState,
+    updateScheduleState,
+    createUsageState,
+    deleteScheduleState,
+    rejectBookingState,
+    toast,
+  ])
 
   useEffect(() => {
     if (createUsageState?.ok) {
@@ -210,6 +271,23 @@ export function LabUsagePageClient({
       })
     }
   }, [createUsageState])
+
+  useEffect(() => {
+    if (approveBookingState?.ok) {
+      queueMicrotask(() => {
+        setApproveTarget(null)
+        setActiveTab("schedule")
+      })
+    }
+  }, [approveBookingState])
+
+  useEffect(() => {
+    if (rejectBookingState?.ok) {
+      queueMicrotask(() => {
+        setRejectTarget(null)
+      })
+    }
+  }, [rejectBookingState])
 
   const handleUsageLabChange = (labId: string) => {
     setUsageLabId(labId)
@@ -238,7 +316,7 @@ export function LabUsagePageClient({
         <div>
           <h1 className="text-xl font-semibold text-foreground">Penggunaan Lab</h1>
           <p className="text-sm text-muted-foreground">
-            Kelola jadwal laboratorium dan catat penggunaan aktual beserta absensi mahasiswa.
+            Kelola jadwal final, approval booking ruang mahasiswa, dan catat penggunaan aktual laboratorium.
           </p>
         </div>
         <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
@@ -272,21 +350,11 @@ export function LabUsagePageClient({
         </CardHeader>
         <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
           <ActionKpiTile
-            title="Operasional Harian"
-            metric="Catat Penggunaan"
-            description="Gunakan setelah sesi selesai"
-            tone="primary"
-            onClick={() => {
-              setActiveTab("history")
-              setCreateUsageOpen(true)
-            }}
-          />
-          <ActionKpiTile
-            title="Jadwal Aktif"
-            metric={usageSummary.schedules}
-            description="Total jadwal tersimpan"
-            tone="muted"
-            onClick={() => setActiveTab("schedule")}
+            title="Approval Booking"
+            metric={usageSummary.bookingRequests}
+            description="Pengajuan mahasiswa menunggu tindakan"
+            tone={usageSummary.bookingRequests > 0 ? "warning" : "muted"}
+            onClick={() => setActiveTab("booking")}
           />
           <ActionKpiTile
             title="Riwayat Penggunaan"
@@ -296,9 +364,16 @@ export function LabUsagePageClient({
             onClick={() => setActiveTab("history")}
           />
           <ActionKpiTile
-            title="Riwayat tanpa Absensi"
+            title="Jadwal Final"
+            metric={usageSummary.schedules}
+            description="Slot lab yang sudah dikonfirmasi"
+            tone="muted"
+            onClick={() => setActiveTab("schedule")}
+          />
+          <ActionKpiTile
+            title="Tanpa Absensi"
             metric={usageSummary.noAttendanceLogs}
-            description="Perlu dicek kelengkapan data"
+            description="Perlu dilengkapi agar data rapi"
             tone="warning"
             onClick={() => setActiveTab("history")}
           />
@@ -563,10 +638,16 @@ export function LabUsagePageClient({
 
       <Tabs
         value={activeTab}
-        onValueChange={(v) => setActiveTab(v as "schedule" | "history")}
+        onValueChange={(v) => setActiveTab(v as "booking" | "schedule" | "history")}
         className="flex flex-col gap-4"
       >
-        <TabsList className="grid h-12 w-full grid-cols-2 items-stretch gap-1 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-1 sm:w-auto">
+        <TabsList className="grid h-12 w-full grid-cols-3 items-stretch gap-1 rounded-2xl border border-primary/25 bg-gradient-to-r from-primary/10 via-primary/5 to-transparent p-1 sm:w-auto">
+          <TabsTrigger
+            value="booking"
+            className="h-full w-full rounded-xl border border-transparent bg-transparent py-0 text-sm font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
+          >
+            Approval Booking
+          </TabsTrigger>
           <TabsTrigger
             value="schedule"
             className="h-full w-full rounded-xl border border-transparent bg-transparent py-0 text-sm font-medium leading-none text-muted-foreground transition-all data-[state=active]:border-primary/25 data-[state=active]:bg-card data-[state=active]:text-foreground data-[state=active]:shadow-sm"
@@ -580,6 +661,91 @@ export function LabUsagePageClient({
             Riwayat Penggunaan
           </TabsTrigger>
         </TabsList>
+
+        <TabsContent value="booking" className="mt-0">
+          <Card className="border-border/50 bg-card shadow-sm">
+            <CardHeader className="pb-3">
+              <CardTitle className="text-base font-semibold text-card-foreground">
+                Pengajuan Booking Ruang Mahasiswa
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="px-0">
+              <div className="px-6 pb-2 text-xs text-muted-foreground">
+                Slot pending dianggap blok sementara agar tidak terjadi double booking sebelum Petugas PLP mengambil keputusan.
+              </div>
+              {bookingRequests.length === 0 ? (
+                <div className="px-6 pb-6">
+                  <Empty className="border border-border/50 bg-muted/20 py-8">
+                    <EmptyHeader>
+                      <EmptyMedia variant="icon">
+                        <CheckCircle2 className="size-5" />
+                      </EmptyMedia>
+                      <EmptyTitle className="text-base">Tidak ada booking yang menunggu approval</EmptyTitle>
+                      <EmptyDescription>
+                        Semua pengajuan ruang mahasiswa sudah selesai diproses.
+                      </EmptyDescription>
+                    </EmptyHeader>
+                  </Empty>
+                </div>
+              ) : (
+                <div className="w-full overflow-x-auto">
+                  <Table className="min-w-[1180px]">
+                    <TableHeader>
+                      <TableRow className="bg-muted/50">
+                        <TableHead className="font-semibold">Kode</TableHead>
+                        <TableHead className="font-semibold">Pemohon</TableHead>
+                        <TableHead className="font-semibold">Lab</TableHead>
+                        <TableHead className="font-semibold">Tanggal</TableHead>
+                        <TableHead className="font-semibold">Waktu</TableHead>
+                        <TableHead className="font-semibold">Akademik</TableHead>
+                        <TableHead className="font-semibold">Pembimbing</TableHead>
+                        <TableHead className="text-right font-semibold">Aksi</TableHead>
+                      </TableRow>
+                    </TableHeader>
+                    <TableBody>
+                      {bookingRequests.map((request) => (
+                        <TableRow key={request.id} className="hover:bg-muted/30">
+                          <TableCell className="font-mono text-xs text-muted-foreground">{request.code}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col">
+                              <span className="font-medium text-foreground">{request.requesterName}</span>
+                              <span className="text-xs text-muted-foreground">{request.requesterNim ?? "-"}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{request.labName}</TableCell>
+                          <TableCell className="text-muted-foreground">{request.plannedDate}</TableCell>
+                          <TableCell className="text-muted-foreground">{request.plannedTime}</TableCell>
+                          <TableCell>
+                            <div className="flex flex-col text-sm">
+                              <span className="text-foreground">{request.courseName}</span>
+                              <span className="text-xs text-muted-foreground">
+                                {request.studyProgram} / {request.semesterClassLabel} / {request.groupName}
+                              </span>
+                              <span className="text-xs text-muted-foreground">{request.materialTopic}</span>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-muted-foreground">{request.advisorLecturerName}</TableCell>
+                          <TableCell>
+                            <div className="flex justify-end gap-2">
+                              <Button type="button" size="sm" variant="outline" onClick={() => setRejectTarget(request)}>
+                                <XCircle className="size-4" />
+                                Tolak
+                              </Button>
+                              <Button type="button" size="sm" onClick={() => setApproveTarget(request)}>
+                                <CheckCircle2 className="size-4" />
+                                Setujui
+                              </Button>
+                            </div>
+                          </TableCell>
+                        </TableRow>
+                      ))}
+                    </TableBody>
+                  </Table>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
 
         <TabsContent value="schedule" className="mt-0">
           <div className="mb-4 rounded-xl border border-border/50 bg-muted/30 px-3 py-2 text-xs text-muted-foreground">
@@ -746,7 +912,7 @@ export function LabUsagePageClient({
                     )}
                     {history.map((usage) => (
                       <TableRow key={usage.id} className="hover:bg-muted/30">
-                        <TableCell className="font-mono text-xs text-muted-foreground">{usage.id}</TableCell>
+                        <TableCell className="font-mono text-xs text-muted-foreground">{usage.displayId}</TableCell>
                         <TableCell className="font-medium text-foreground">{usage.labName}</TableCell>
                         <TableCell className="text-muted-foreground">{usage.date}</TableCell>
                         <TableCell className="text-muted-foreground">{usage.courseName}</TableCell>
@@ -754,9 +920,22 @@ export function LabUsagePageClient({
                         <TableCell className="text-muted-foreground">{usage.studentCount}</TableCell>
                         <TableCell className="text-muted-foreground">{usage.durationLabel}</TableCell>
                         <TableCell>
-                          <div className="flex justify-end">
+                          <div className="flex justify-end gap-1">
                             <Button variant="ghost" size="icon" className="size-8" onClick={() => setSelectedHistory(usage)}>
                               <Eye className="size-4" />
+                            </Button>
+                            <Button
+                              type="button"
+                              variant="ghost"
+                              size="icon"
+                              className="size-8"
+                              onClick={() =>
+                                window.open(`/lab-usage-proof/${usage.id}`, "_blank", "noopener,noreferrer")
+                              }
+                              title="Cetak lembar"
+                              aria-label="Cetak lembar"
+                            >
+                              <Printer className="size-4" />
                             </Button>
                           </div>
                         </TableCell>
@@ -940,6 +1119,121 @@ export function LabUsagePageClient({
         </DialogContent>
       </Dialog>
 
+      <Dialog open={!!approveTarget} onOpenChange={(open) => !open && setApproveTarget(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Setujui Booking Ruang</DialogTitle>
+            <DialogDescription>
+              Approval akan otomatis membuat jadwal final pada slot yang diajukan mahasiswa.
+            </DialogDescription>
+          </DialogHeader>
+          {approveTarget && (
+            <form action={approveBookingAction} className="grid gap-3">
+              {approveBookingState && (
+                <div
+                  className={`rounded-xl border px-3 py-2 text-sm ${
+                    approveBookingState.ok
+                      ? "border-success/20 bg-success/5 text-success-foreground"
+                      : "border-destructive/20 bg-destructive/5 text-destructive"
+                  }`}
+                >
+                  {approveBookingState.message}
+                </div>
+              )}
+              <input type="hidden" name="requestId" value={approveTarget.id} />
+              <div className="rounded-xl border border-border/50 bg-muted/20 p-4 text-sm">
+                <p className="font-medium text-foreground">{approveTarget.code}</p>
+                <div className="mt-2 grid gap-2 sm:grid-cols-2 text-muted-foreground">
+                  <p>
+                    Mahasiswa: <span className="text-foreground">{approveTarget.requesterName}</span>
+                  </p>
+                  <p>
+                    Lab: <span className="text-foreground">{approveTarget.labName}</span>
+                  </p>
+                  <p>
+                    Tanggal: <span className="text-foreground">{approveTarget.plannedDate}</span>
+                  </p>
+                  <p>
+                    Waktu: <span className="text-foreground">{approveTarget.plannedTime}</span>
+                  </p>
+                </div>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="approveNote">Catatan Approval (opsional)</Label>
+                <Textarea
+                  id="approveNote"
+                  name="note"
+                  rows={3}
+                  placeholder="Contoh: disetujui sesuai jadwal lab tersedia"
+                />
+              </div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={() => setApproveTarget(null)}>
+                  Batal
+                </Button>
+                <Button type="submit" disabled={approveBookingPending}>
+                  {approveBookingPending ? "Menyetujui..." : "Setujui Booking"}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
+      <Dialog open={!!rejectTarget} onOpenChange={(open) => !open && setRejectTarget(null)}>
+        <DialogContent className="max-w-lg max-h-[90vh] overflow-y-auto">
+          <DialogHeader>
+            <DialogTitle>Tolak Booking Ruang</DialogTitle>
+            <DialogDescription>
+              Penolakan akan terlihat oleh mahasiswa pada daftar booking mereka.
+            </DialogDescription>
+          </DialogHeader>
+          {rejectTarget && (
+            <form action={rejectBookingAction} className="grid gap-3">
+              {rejectBookingState && (
+                <div
+                  className={`rounded-xl border px-3 py-2 text-sm ${
+                    rejectBookingState.ok
+                      ? "border-success/20 bg-success/5 text-success-foreground"
+                      : "border-destructive/20 bg-destructive/5 text-destructive"
+                  }`}
+                >
+                  {rejectBookingState.message}
+                </div>
+              )}
+              <input type="hidden" name="requestId" value={rejectTarget.id} />
+              <div className="rounded-xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-muted-foreground">
+                <p className="font-medium text-foreground">{rejectTarget.code}</p>
+                <p className="mt-1">
+                  {rejectTarget.requesterName} - {rejectTarget.labName}
+                </p>
+                <p className="mt-1">
+                  {rejectTarget.plannedDate} • {rejectTarget.plannedTime}
+                </p>
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="rejectNote">Alasan Penolakan</Label>
+                <Textarea
+                  id="rejectNote"
+                  name="note"
+                  rows={3}
+                  placeholder="Contoh: slot bentrok dengan kegiatan prioritas lab"
+                  required
+                />
+              </div>
+              <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
+                <Button type="button" variant="outline" onClick={() => setRejectTarget(null)}>
+                  Batal
+                </Button>
+                <Button type="submit" variant="destructive" disabled={rejectBookingPending}>
+                  {rejectBookingPending ? "Menolak..." : "Tolak Booking"}
+                </Button>
+              </div>
+            </form>
+          )}
+        </DialogContent>
+      </Dialog>
+
       <Dialog open={!!selectedHistory} onOpenChange={(open) => !open && setSelectedHistory(null)}>
         <DialogContent className="max-w-2xl max-h-[90vh] overflow-y-auto">
           <DialogHeader>
@@ -965,6 +1259,18 @@ export function LabUsagePageClient({
                 <div><p className="text-muted-foreground">Kelompok</p><p>{selectedHistory.groupName}</p></div>
                 <div><p className="text-muted-foreground">Jumlah Mhs</p><p>{selectedHistory.studentCount}</p></div>
               </div>
+              </div>
+              <div className="flex justify-end">
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() =>
+                    window.open(`/lab-usage-proof/${selectedHistory.id}`, "_blank", "noopener,noreferrer")
+                  }
+                >
+                  <Printer className="size-4" />
+                  Cetak Lembar
+                </Button>
               </div>
               <div>
                 <p className="mb-2 text-sm font-medium text-foreground">Daftar Hadir</p>

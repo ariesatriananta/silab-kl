@@ -83,6 +83,21 @@ function buildQrValue(assetCode: string) {
   return `TOOL:${assetCode}`
 }
 
+function isNeonHttpNoTransactionError(error: unknown) {
+  return error instanceof Error && error.message.toLowerCase().includes("no transactions support in neon-http driver")
+}
+
+async function runToolDbUnit<T>(work: (executor: typeof db) => Promise<T>) {
+  try {
+    return await db.transaction(async (tx) => work(tx as unknown as typeof db))
+  } catch (error) {
+    if (isNeonHttpNoTransactionError(error)) {
+      return await work(db)
+    }
+    throw error
+  }
+}
+
 export async function createToolMasterAction(
   _prev: ToolMasterActionResult | null,
   formData: FormData,
@@ -110,7 +125,7 @@ export async function createToolMasterAction(
   if (!access.ok) return { ok: false, message: access.message }
 
   try {
-    await db.transaction(async (tx) => {
+    await runToolDbUnit(async (tx) => {
       const [model] = await tx
         .insert(toolModels)
         .values({
@@ -245,7 +260,7 @@ export async function updateToolAssetAction(
   if (!newLabAccess.ok) return { ok: false, message: newLabAccess.message }
 
   try {
-    await db.transaction(async (tx) => {
+    await runToolDbUnit(async (tx) => {
       await tx
         .update(toolModels)
         .set({
@@ -371,7 +386,7 @@ export async function deactivateToolAssetAction(
     }
   }
 
-  await db.transaction(async (tx) => {
+  await runToolDbUnit(async (tx) => {
     await tx
       .update(toolAssets)
       .set({

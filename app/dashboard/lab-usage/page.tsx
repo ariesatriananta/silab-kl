@@ -1,8 +1,9 @@
 import { redirect } from "next/navigation"
-import { asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
 
 import {
   LabUsagePageClient,
+  type LabUsageBookingRequestRow,
   type LabUsageAttendanceRow,
   type LabUsageHistoryRow,
   type LabUsageLabOption,
@@ -10,7 +11,15 @@ import {
 } from "@/components/lab-usage/lab-usage-page-client"
 import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
-import { labSchedules, labUsageAttendances, labUsageLogs, labs, userLabAssignments } from "@/lib/db/schema"
+import {
+  labRoomBookingRequests,
+  labSchedules,
+  labUsageAttendances,
+  labUsageLogs,
+  labs,
+  userLabAssignments,
+  users,
+} from "@/lib/db/schema"
 
 type Role = "admin" | "mahasiswa" | "petugas_plp" | "dosen"
 
@@ -77,7 +86,7 @@ export default async function LabUsagePage({
   if (!session?.user?.id || !session.user.role) redirect("/")
 
   const role = session.user.role as Role
-  if (role === "mahasiswa") redirect("/dashboard/student-tools")
+  if (role === "mahasiswa") redirect("/dashboard/student-lab-schedule")
   if (role === "dosen") redirect("/dashboard")
 
   const accessibleLabIds = await getAccessibleLabIds(role, session.user.id)
@@ -106,7 +115,7 @@ export default async function LabUsagePage({
   const historyPageSize = 20
   const historyOffset = (historyPage - 1) * historyPageSize
 
-  const [labRows, scheduleRowsRaw, historyRowsRaw, historyCountRows, attendanceRowsRaw] = await Promise.all([
+  const [labRows, scheduleRowsRaw, historyRowsRaw, historyCountRows, bookingRequestRowsRaw] = await Promise.all([
     db.select({ id: labs.id, name: labs.name }).from(labs).where(labsFilter).orderBy(asc(labs.name)),
     db
       .select({
@@ -149,15 +158,50 @@ export default async function LabUsagePage({
       .where(usageFilter),
     db
       .select({
-        usageLogId: labUsageAttendances.usageLogId,
-        attendeeName: labUsageAttendances.attendeeName,
-        attendeeNim: labUsageAttendances.attendeeNim,
+        id: labRoomBookingRequests.id,
+        code: labRoomBookingRequests.code,
+        labId: labRoomBookingRequests.labId,
+        labName: labs.name,
+        requesterName: users.fullName,
+        requesterNim: users.nim,
+        courseName: labRoomBookingRequests.courseName,
+        materialTopic: labRoomBookingRequests.materialTopic,
+        studyProgram: labRoomBookingRequests.studyProgram,
+        semesterClassLabel: labRoomBookingRequests.semesterClassLabel,
+        groupName: labRoomBookingRequests.groupName,
+        advisorLecturerName: labRoomBookingRequests.advisorLecturerName,
+        plannedStartAt: labRoomBookingRequests.plannedStartAt,
+        plannedEndAt: labRoomBookingRequests.plannedEndAt,
+        note: labRoomBookingRequests.note,
+        createdAt: labRoomBookingRequests.createdAt,
       })
-      .from(labUsageAttendances)
-      .innerJoin(labUsageLogs, eq(labUsageLogs.id, labUsageAttendances.usageLogId))
-      .where(usageFilter)
-      .orderBy(asc(labUsageAttendances.createdAt)),
+      .from(labRoomBookingRequests)
+      .innerJoin(labs, eq(labs.id, labRoomBookingRequests.labId))
+      .innerJoin(users, eq(users.id, labRoomBookingRequests.requesterUserId))
+      .where(
+        role === "admin"
+          ? eq(labRoomBookingRequests.status, "pending")
+          : accessibleLabIds && accessibleLabIds.length > 0
+            ? and(inArray(labRoomBookingRequests.labId, accessibleLabIds), eq(labRoomBookingRequests.status, "pending"))
+            : sql`false`,
+      )
+      .orderBy(asc(labRoomBookingRequests.plannedStartAt))
+      .limit(100),
   ])
+
+  const historyIds = historyRowsRaw.map((row) => row.id)
+  const attendanceRowsRaw =
+    historyIds.length > 0
+      ? await db
+          .select({
+            usageLogId: labUsageAttendances.usageLogId,
+            attendeeName: labUsageAttendances.attendeeName,
+            attendeeNim: labUsageAttendances.attendeeNim,
+          })
+          .from(labUsageAttendances)
+          .where(inArray(labUsageAttendances.usageLogId, historyIds))
+          .orderBy(asc(labUsageAttendances.createdAt))
+      : []
 
   const labOptions: LabUsageLabOption[] = labRows.map((r) => ({ id: r.id, name: r.name }))
   const schedules: LabUsageScheduleRow[] = scheduleRowsRaw.map((r) => ({
@@ -184,7 +228,8 @@ export default async function LabUsagePage({
   }
 
   const history: LabUsageHistoryRow[] = historyRowsRaw.map((r) => ({
-    id: r.id.slice(0, 8),
+    id: r.id,
+    displayId: r.id.slice(0, 8),
     labId: r.labId,
     labName: r.labName,
     courseName: r.courseName,
@@ -197,6 +242,25 @@ export default async function LabUsagePage({
     attendance: attendanceMap.get(r.id) ?? [],
   }))
 
+  const bookingRequests: LabUsageBookingRequestRow[] = bookingRequestRowsRaw.map((r) => ({
+    id: r.id,
+    code: r.code,
+    labId: r.labId,
+    labName: r.labName,
+    requesterName: r.requesterName,
+    requesterNim: r.requesterNim,
+    courseName: r.courseName,
+    materialTopic: r.materialTopic,
+    studyProgram: r.studyProgram,
+    semesterClassLabel: r.semesterClassLabel,
+    groupName: r.groupName,
+    advisorLecturerName: r.advisorLecturerName,
+    plannedDate: fmtDate(r.plannedStartAt),
+    plannedTime: `${fmtTime(r.plannedStartAt)} - ${fmtTime(r.plannedEndAt)}`,
+    requestedAt: fmtDate(r.createdAt),
+    note: r.note,
+  }))
+
   const totalHistoryItems = Number(historyCountRows[0]?.total ?? 0)
   const totalHistoryPages = Math.max(1, Math.ceil(totalHistoryItems / historyPageSize))
 
@@ -206,6 +270,7 @@ export default async function LabUsagePage({
       labs={labOptions}
       schedules={schedules}
       history={history}
+      bookingRequests={bookingRequests}
       historyPagination={{
         page: Math.min(historyPage, totalHistoryPages),
         pageSize: historyPageSize,

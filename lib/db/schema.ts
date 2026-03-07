@@ -55,6 +55,12 @@ export const materialRequestStatusEnum = pgEnum("material_request_status", [
   "rejected",
   "cancelled",
 ])
+export const labRoomBookingRequestStatusEnum = pgEnum("lab_room_booking_request_status", [
+  "pending",
+  "approved",
+  "rejected",
+  "cancelled",
+])
 export const consumableStockMovementTypeEnum = pgEnum("consumable_stock_movement_type", [
   "stock_in",
   "material_request_fulfill",
@@ -592,6 +598,49 @@ export const labUsageAttendances = pgTable(
   (t) => [
     index("lab_usage_attendances_usage_idx").on(t.usageLogId),
     index("lab_usage_attendances_nim_idx").on(t.attendeeNim),
+  ],
+)
+
+export const labRoomBookingRequests = pgTable(
+  "lab_room_booking_requests",
+  {
+    id: uuid("id").defaultRandom().primaryKey(),
+    code: varchar("code", { length: 40 }).notNull(),
+    labId: uuid("lab_id")
+      .notNull()
+      .references(() => labs.id, { onDelete: "restrict" }),
+    requesterUserId: uuid("requester_user_id")
+      .notNull()
+      .references(() => users.id, { onDelete: "restrict" }),
+    status: labRoomBookingRequestStatusEnum("status").default("pending").notNull(),
+    courseName: varchar("course_name", { length: 200 }).notNull(),
+    materialTopic: varchar("material_topic", { length: 200 }).notNull(),
+    studyProgram: varchar("study_program", { length: 100 }).notNull(),
+    semesterClassLabel: varchar("semester_class_label", { length: 100 }).notNull(),
+    groupName: varchar("group_name", { length: 100 }).notNull(),
+    advisorLecturerName: varchar("advisor_lecturer_name", { length: 200 }).notNull(),
+    plannedStartAt: timestamp("planned_start_at", { withTimezone: true }).notNull(),
+    plannedEndAt: timestamp("planned_end_at", { withTimezone: true }).notNull(),
+    note: text("note"),
+    approvedByUserId: uuid("approved_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    approvedAt: timestamp("approved_at", { withTimezone: true }),
+    rejectionReason: text("rejection_reason"),
+    rejectedByUserId: uuid("rejected_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    rejectedAt: timestamp("rejected_at", { withTimezone: true }),
+    cancelReason: text("cancel_reason"),
+    cancelledByUserId: uuid("cancelled_by_user_id").references(() => users.id, { onDelete: "set null" }),
+    cancelledAt: timestamp("cancelled_at", { withTimezone: true }),
+    scheduleId: uuid("schedule_id").references(() => labSchedules.id, { onDelete: "set null" }),
+    usageLogId: uuid("usage_log_id").references(() => labUsageLogs.id, { onDelete: "set null" }),
+    createdAt: timestamp("created_at", { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp("updated_at", { withTimezone: true }).defaultNow().notNull(),
+  },
+  (t) => [
+    uniqueIndex("lab_room_booking_requests_code_uq").on(t.code),
+    index("lab_room_booking_requests_lab_idx").on(t.labId),
+    index("lab_room_booking_requests_requester_idx").on(t.requesterUserId),
+    index("lab_room_booking_requests_status_idx").on(t.status),
+    index("lab_room_booking_requests_planned_start_idx").on(t.plannedStartAt),
   ],
 )
 

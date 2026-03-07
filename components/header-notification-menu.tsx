@@ -54,11 +54,14 @@ export function HeaderNotificationMenu() {
     if (mode === "refresh") setRefreshing(true)
     try {
       const response = await fetch("/api/notifications/summary", { method: "GET", cache: "no-store" })
-      if (!response.ok) return
+      if (!response.ok) {
+        if (mode === "initial") setData({ totalUnread: 0, items: [] })
+        return
+      }
       const next = (await response.json()) as NotificationResponse
       setData(next)
     } catch {
-      // ignore network issues for non-blocking header notification
+      if (mode === "initial") setData({ totalUnread: 0, items: [] })
     } finally {
       if (mode === "initial") setLoading(false)
       setRefreshing(false)
@@ -80,7 +83,7 @@ export function HeaderNotificationMenu() {
         void fetchSummary("refresh")
       }
     }
-    const timer = window.setInterval(tick, 60_000)
+    const timer = window.setInterval(tick, 120_000)
     const onVisibilityChange = () => {
       if (document.visibilityState === "visible") {
         void fetchSummary("refresh")
@@ -116,10 +119,7 @@ export function HeaderNotificationMenu() {
       onOpenChange={(open) => {
         if (!open) return
         setData((prev) => ({ ...prev, totalUnread: 0 }))
-        void (async () => {
-          await markAsRead()
-          await fetchSummary("refresh")
-        })()
+        void markAsRead()
       }}
     >
       <DropdownMenuTrigger asChild>

@@ -547,6 +547,14 @@ async function getBorrowingData(
 }
 
 async function getCreateOptions(role: Role, userId: string, accessibleLabIds: string[] | null) {
+  if (role === "dosen") {
+    return {
+      labsOptions: [] as BorrowingCreateLabOption[],
+      requesterOptions: [] as BorrowingCreateRequesterOption[],
+      approvalRoutes: [] as BorrowingCreateApprovalRouteOption[],
+    }
+  }
+
   const labScopeWhere =
     role !== "admin" && role !== "mahasiswa" && accessibleLabIds
       ? accessibleLabIds.length > 0

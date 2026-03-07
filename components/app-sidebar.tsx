@@ -54,7 +54,7 @@ const studentNavItems: Array<{
   roles: Role[]
 }> = [
   { title: "Katalog Alat", href: "/dashboard/student-tools", icon: GraduationCap, roles: ["mahasiswa"] },
-  { title: "Jadwal Lab", href: "/dashboard/student-lab-schedule", icon: CalendarDays, roles: ["mahasiswa"] },
+  { title: "Booking Lab", href: "/dashboard/student-lab-schedule", icon: CalendarDays, roles: ["mahasiswa"] },
 ]
 
 export function AppSidebar() {

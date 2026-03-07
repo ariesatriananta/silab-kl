@@ -44,8 +44,8 @@ const pageMeta: Record<string, { title: string; subtitle: string }> = {
     subtitle: "Cari alat dan ajukan peminjaman dari katalog",
   },
   "/dashboard/student-lab-schedule": {
-    title: "Jadwal Lab Mahasiswa",
-    subtitle: "Ketersediaan ruang dan jadwal laboratorium (read-only)",
+    title: "Booking Ruang Lab",
+    subtitle: "Availability ruang, pengajuan booking, dan status pengajuan mahasiswa",
   },
   "/dashboard/users": {
     title: "Kelola User",

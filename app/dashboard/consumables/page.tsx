@@ -77,17 +77,8 @@ async function getConsumablesData(
   const movementLabWhere =
     movementLabFilter && movementLabFilter !== "all" ? eq(consumableItems.labId, movementLabFilter) : undefined
 
-  const [
-    stockRows,
-    requestRows,
-    requestCountRows,
-    requestLineRows,
-    labRows,
-    createItemRows,
-    movementRows,
-    movementCountRows,
-    movementSourceRows,
-  ] = await Promise.all([
+  const [stockRows, requestRows, requestCountRows, labRows, createItemRows, movementRows, movementCountRows, movementSourceRows] =
+    await Promise.all([
     db
       .select({
         id: consumableItems.id,
@@ -136,17 +127,6 @@ async function getConsumablesData(
       .select({ total: sql<number>`count(*)` })
       .from(materialRequests)
       .where(requestWhere),
-    db
-      .select({
-        requestId: materialRequestItems.requestId,
-        consumableId: materialRequestItems.consumableItemId,
-        name: consumableItems.name,
-        unit: consumableItems.unit,
-        qtyRequested: materialRequestItems.qtyRequested,
-        qtyFulfilled: materialRequestItems.qtyFulfilled,
-      })
-      .from(materialRequestItems)
-      .innerJoin(consumableItems, eq(consumableItems.id, materialRequestItems.consumableItemId)),
     db
       .select({ id: labs.id, name: labs.name })
       .from(labs)
@@ -208,6 +188,23 @@ async function getConsumablesData(
       .innerJoin(consumableItems, eq(consumableItems.id, consumableStockMovements.consumableItemId))
       .where(and(stockWhere, sql`${movementSourceExpr} is not null`, sql`${movementSourceExpr} <> ''`)),
   ])
+
+  const requestIds = requestRows.map((row) => row.id)
+  const requestLineRows =
+    requestIds.length > 0
+      ? await db
+          .select({
+            requestId: materialRequestItems.requestId,
+            consumableId: materialRequestItems.consumableItemId,
+            name: consumableItems.name,
+            unit: consumableItems.unit,
+            qtyRequested: materialRequestItems.qtyRequested,
+            qtyFulfilled: materialRequestItems.qtyFulfilled,
+          })
+          .from(materialRequestItems)
+          .innerJoin(consumableItems, eq(consumableItems.id, materialRequestItems.consumableItemId))
+          .where(inArray(materialRequestItems.requestId, requestIds))
+      : []
 
   const consumables: ConsumableStockRow[] = stockRows.map((row) => ({
     id: row.id,
