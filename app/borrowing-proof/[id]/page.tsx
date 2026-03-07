@@ -156,6 +156,8 @@ export default async function BorrowingProofPage({
       .orderBy(asc(borrowingReturns.returnedAt)),
   ])
 
+  const toolItems = items.filter((item) => item.itemType === "tool_asset")
+
   const returnByItemId = new Map<
     string,
     { returnedAt: Date | null; returnCondition: "baik" | "maintenance" | "damaged" }
@@ -283,14 +285,14 @@ export default async function BorrowingProofPage({
                 </tr>
               </thead>
               <tbody>
-                {items.length === 0 && (
+                {toolItems.length === 0 && (
                   <tr>
                     <td colSpan={8} className="border border-black px-2 py-2 text-center">
-                      Tidak ada item.
+                      Tidak ada alat pada transaksi ini.
                     </td>
                   </tr>
                 )}
-                {items.map((item, idx) => {
+                {toolItems.map((item, idx) => {
                   const returnInfo = returnByItemId.get(item.id)
                   return (
                   <tr key={item.id}>
@@ -322,7 +324,7 @@ export default async function BorrowingProofPage({
                     <td className="border border-black px-2 py-1">&nbsp;</td>
                   </tr>
                 )})}
-                {Array.from({ length: Math.max(0, 12 - items.length) }).map((_, idx) => (
+                {Array.from({ length: Math.max(0, 12 - toolItems.length) }).map((_, idx) => (
                   <tr key={`blank-${idx}`}>
                     <td className="border border-black px-2 py-1">&nbsp;</td>
                     <td className="border border-black px-2 py-1">&nbsp;</td>

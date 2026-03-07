@@ -391,6 +391,7 @@ async function getBorrowingData(
       .select({
         transactionId: borrowingTransactionItems.transactionId,
         itemId: borrowingTransactionItems.id,
+        itemType: borrowingTransactionItems.itemType,
       })
       .from(borrowingTransactionItems)
       .where(inArray(borrowingTransactionItems.transactionId, txIds)),
@@ -456,9 +457,17 @@ async function getBorrowingData(
 
   const txIdSet = new Set(txRows.map((row) => row.id))
   const itemCountByTx = new Map<string, number>()
+  const toolItemCountByTx = new Map<string, number>()
+  const consumableItemCountByTx = new Map<string, number>()
   for (const row of itemRows) {
     if (!txIdSet.has(row.transactionId)) continue
     itemCountByTx.set(row.transactionId, (itemCountByTx.get(row.transactionId) ?? 0) + 1)
+    if (row.itemType === "tool_asset") {
+      toolItemCountByTx.set(row.transactionId, (toolItemCountByTx.get(row.transactionId) ?? 0) + 1)
+    }
+    if (row.itemType === "consumable") {
+      consumableItemCountByTx.set(row.transactionId, (consumableItemCountByTx.get(row.transactionId) ?? 0) + 1)
+    }
   }
 
   const approvalCountByTx = new Map(approvalRows.map((r) => [r.transactionId, Number(r.count)]))
@@ -524,6 +533,8 @@ async function getBorrowingData(
       groupName: row.groupName,
       advisorLecturerName: row.advisorLecturerName,
       itemCount: itemCountByTx.get(row.id) ?? 0,
+      toolItemCount: toolItemCountByTx.get(row.id) ?? 0,
+      consumableItemCount: consumableItemCountByTx.get(row.id) ?? 0,
       pendingApprovalLabel: pendingApproval?.label ?? null,
       pendingApprovalApprovers: pendingApproval?.approvers ?? [],
       pendingApprovalTriage: pendingApproval?.triage ?? null,

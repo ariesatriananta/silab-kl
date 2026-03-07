@@ -235,11 +235,58 @@ export type BorrowingListRow = {
   groupName: string
   advisorLecturerName: string | null
   itemCount: number
+  toolItemCount: number
+  consumableItemCount: number
   pendingApprovalLabel: string | null
   pendingApprovalApprovers: string[]
   pendingApprovalTriage: "step1_ready" | "step2_ready" | "blocked_matrix" | "unknown" | null
   pendingRequiredApproverName: string | null
   adminOverrideReasonRequired: boolean
+}
+
+function BorrowingPrintActions({
+  transactionId,
+  hasTools,
+  hasConsumables,
+  compact = false,
+}: {
+  transactionId: string
+  hasTools: boolean
+  hasConsumables: boolean
+  compact?: boolean
+}) {
+  return (
+    <div className={`flex items-center ${compact ? "justify-end gap-1" : "justify-end gap-2"}`}>
+      {hasTools && (
+        <Button variant="outline" size={compact ? "icon" : "sm"} className={compact ? "size-8" : undefined} asChild>
+          <Link
+            href={`/borrowing-proof/${transactionId}`}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Cetak alat"
+            title="Cetak alat"
+          >
+            <Printer className="size-4" />
+            {!compact && "Cetak Alat"}
+          </Link>
+        </Button>
+      )}
+      {hasConsumables && (
+        <Button variant="outline" size={compact ? "icon" : "sm"} className={compact ? "size-8" : undefined} asChild>
+          <Link
+            href={`/consumable-request-proof/${transactionId}`}
+            target="_blank"
+            rel="noreferrer"
+            aria-label="Cetak bahan"
+            title="Cetak bahan"
+          >
+            <FlaskConical className="size-4" />
+            {!compact && "Cetak Bahan"}
+          </Link>
+        </Button>
+      )}
+    </div>
+  )
 }
 
 export type BorrowingDetail = {
@@ -1731,17 +1778,12 @@ export function BorrowingPageClient({
                           <Button variant="ghost" size="icon" className="size-8" onClick={() => setSelectedBorrowingId(borrow.id)} aria-label="Lihat detail">
                             <Eye className="size-4" />
                           </Button>
-                          <Button variant="ghost" size="icon" className="size-8" asChild>
-                            <Link
-                              href={`/borrowing-proof/${borrow.id}`}
-                              target="_blank"
-                              rel="noreferrer"
-                              aria-label="Cetak bukti"
-                              title="Cetak bukti"
-                            >
-                              <Printer className="size-4" />
-                            </Link>
-                          </Button>
+                          <BorrowingPrintActions
+                            transactionId={borrow.id}
+                            hasTools={borrow.toolItemCount > 0}
+                            hasConsumables={borrow.consumableItemCount > 0}
+                            compact
+                          />
                         </div>
                       </TableCell>
                     </TableRow>
@@ -1802,12 +1844,11 @@ export function BorrowingPageClient({
           {!detailLoading && !detailError && selectedBorrowing && (
             <div className="flex flex-col gap-4">
               <div className="flex justify-end">
-                <Button variant="outline" size="sm" asChild>
-                  <Link href={`/borrowing-proof/${selectedBorrowing.id}`} target="_blank" rel="noreferrer">
-                    <Printer className="size-4" />
-                    Cetak Bukti
-                  </Link>
-                </Button>
+                <BorrowingPrintActions
+                  transactionId={selectedBorrowing.id}
+                  hasTools={selectedBorrowing.items.some((item) => item.itemType === "tool_asset")}
+                  hasConsumables={selectedBorrowing.items.some((item) => item.itemType === "consumable")}
+                />
               </div>
               {selectedBorrowingActionHint && (
                 <div
