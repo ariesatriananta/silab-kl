@@ -52,6 +52,17 @@ async function getToolsData(
         : sql`false`
       : undefined
 
+  const labRows = await db
+    .select({ id: labs.id, name: labs.name })
+    .from(labs)
+    .where(and(eq(labs.isActive, true), labWhere))
+    .orderBy(asc(labs.name))
+
+  const normalizedLabFilter =
+    filters.lab === "all"
+      ? "all"
+      : labRows.find((lab) => lab.id === filters.lab || lab.name === filters.lab)?.id ?? "all"
+
   const searchConditions = filters.q
     ? or(
         ilike(toolModels.name, `%${filters.q}%`),
@@ -60,7 +71,7 @@ async function getToolsData(
         ilike(toolAssets.inventoryCode, `%${filters.q}%`),
       )
     : undefined
-  const selectedLabCondition = filters.lab !== "all" ? eq(toolModels.labId, filters.lab) : undefined
+  const selectedLabCondition = normalizedLabFilter !== "all" ? eq(toolModels.labId, normalizedLabFilter) : undefined
   const selectedCategoryCondition = filters.category !== "all" ? eq(toolModels.category, filters.category) : undefined
 
   const filteredToolsWhere = and(
@@ -73,7 +84,7 @@ async function getToolsData(
 
   const offset = (filters.page - 1) * filters.pageSize
 
-  const [toolRows, totalRows, labRows, categoryRows, eventRows, kpiRows] = await Promise.all([
+  const [toolRows, totalRows, categoryRows, eventRows, kpiRows] = await Promise.all([
     db
       .select({
         assetId: toolAssets.id,
@@ -107,11 +118,6 @@ async function getToolsData(
       .from(toolAssets)
       .innerJoin(toolModels, eq(toolAssets.toolModelId, toolModels.id))
       .where(filteredToolsWhere),
-    db
-      .select({ id: labs.id, name: labs.name })
-      .from(labs)
-      .where(and(eq(labs.isActive, true), labWhere))
-      .orderBy(asc(labs.name)),
     db
       .selectDistinct({ category: toolModels.category })
       .from(toolModels)
@@ -210,7 +216,7 @@ async function getToolsData(
     tools,
     createLabs,
     events,
-    filterLabs: labRows.map((lab) => lab.name),
+    filterLabs: labRows.map((lab) => ({ id: lab.id, name: lab.name })),
     filterCategories: categoryRows.map((row) => row.category),
     kpi,
     pagination: {
@@ -221,7 +227,7 @@ async function getToolsData(
     },
     filters: {
       q: filters.q,
-      lab: filters.lab,
+      lab: normalizedLabFilter,
       category: filters.category,
     },
   }

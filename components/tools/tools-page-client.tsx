@@ -124,7 +124,7 @@ export function ToolsPageClient({
   data: ToolRow[]
   masterLabs: ToolCreateLabOption[]
   events: ToolAssetEventRow[]
-  filterLabs: string[]
+  filterLabs: ToolCreateLabOption[]
   filterCategories: string[]
   kpi: { totalUnits: number; available: number; borrowed: number; issue: number }
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
@@ -304,7 +304,11 @@ export function ToolsPageClient({
               <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Lab" /></SelectTrigger>
               <SelectContent>
                 <SelectItem value="all">Semua Lab</SelectItem>
-                {filterLabs.map((lab) => <SelectItem key={lab} value={lab}>{lab}</SelectItem>)}
+                {filterLabs.map((lab) => (
+                  <SelectItem key={lab.id} value={lab.id}>
+                    {lab.name}
+                  </SelectItem>
+                ))}
               </SelectContent>
             </Select>
             <Select value={categoryFilter} onValueChange={setCategoryFilter}>
