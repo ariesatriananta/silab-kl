@@ -27,6 +27,10 @@ const pageMeta: Record<string, { title: string; subtitle: string }> = {
     title: "Alat Laboratorium",
     subtitle: "Master alat, unit, status, dan QR identifikasi",
   },
+  "/dashboard/labs": {
+    title: "Kelola Laboratorium",
+    subtitle: "Master laboratorium, status aktif, dan referensi operasional",
+  },
   "/dashboard/borrowing": {
     title: "Peminjaman",
     subtitle: "Pengajuan, approval, serah terima, dan pengembalian",

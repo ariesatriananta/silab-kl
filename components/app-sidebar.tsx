@@ -14,6 +14,7 @@ import {
   Users,
   Network,
   Loader2,
+  Building2,
 } from "lucide-react"
 import { useEffect, useState } from "react"
 import {
@@ -42,6 +43,7 @@ const mainNavItems: Array<{
   { title: "Bahan Habis Pakai", href: "/dashboard/consumables", icon: FlaskConical, roles: ["admin", "petugas_plp"] },
   { title: "Penggunaan Lab", href: "/dashboard/lab-usage", icon: CalendarDays, roles: ["admin", "petugas_plp"] },
   { title: "Alat Laboratorium", href: "/dashboard/tools", icon: Wrench, roles: ["admin", "petugas_plp"] },
+  { title: "Kelola Laboratorium", href: "/dashboard/labs", icon: Building2, roles: ["admin"] },
   { title: "Approval Matrix", href: "/dashboard/approval-matrix", icon: Network, roles: ["admin"] },
   { title: "Kelola User", href: "/dashboard/users", icon: Users, roles: ["admin"] },
   { title: "Dashboard", href: "/dashboard", icon: LayoutDashboard, roles: ["admin", "petugas_plp"] },
@@ -75,7 +77,7 @@ export function AppSidebar() {
     ["/dashboard/borrowing", "/dashboard/consumables", "/dashboard/lab-usage"].includes(item.href),
   )
   const masterNav = visibleMainNav.filter((item) =>
-    ["/dashboard/tools", "/dashboard/approval-matrix", "/dashboard/users"].includes(item.href),
+    ["/dashboard/tools", "/dashboard/labs", "/dashboard/approval-matrix", "/dashboard/users"].includes(item.href),
   )
   const monitoringNav = visibleMainNav.filter((item) => item.href === "/dashboard")
 
