@@ -284,59 +284,61 @@ export function ToolsPageClient({
 
       <Card className="border-border/50 bg-card shadow-sm">
         <CardContent className="p-4">
-          <form
-            className="flex flex-col gap-3 sm:flex-row sm:items-center"
-            onSubmit={(e) => {
-              e.preventDefault()
-              applyFiltersToUrl({ page: 1 })
-            }}
-          >
-            <div className="relative flex-1">
-              <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-              <Input
-                className="pl-9"
-                placeholder="Cari nama alat / kode unit / kode model"
-                value={search}
-                onChange={(e) => setSearch(e.target.value)}
-              />
-            </div>
-            <Select value={labFilter} onValueChange={setLabFilter}>
-              <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Lab" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Lab</SelectItem>
-                {filterLabs.map((lab) => (
-                  <SelectItem key={lab.id} value={lab.id}>
-                    {lab.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            <Select value={categoryFilter} onValueChange={setCategoryFilter}>
-              <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Kategori" /></SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Semua Kategori</SelectItem>
-                {filterCategories.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
-              </SelectContent>
-            </Select>
-            <Button type="submit" variant="outline" disabled={isPendingNavigation}>
-              {isPendingNavigation ? "Memuat..." : "Terapkan"}
-            </Button>
-            <Button
-              type="button"
-              variant="ghost"
-              disabled={isPendingNavigation}
-              onClick={() => {
-                setSearch("")
-                setLabFilter("all")
-                setCategoryFilter("all")
-                applyFiltersToUrl({ q: "", lab: "all", category: "all", page: 1 })
+          <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
+            <form
+              className="flex flex-1 flex-col gap-3 sm:flex-row sm:items-center"
+              onSubmit={(e) => {
+                e.preventDefault()
+                applyFiltersToUrl({ page: 1 })
               }}
             >
-              Reset
-            </Button>
+              <div className="relative flex-1">
+                <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+                <Input
+                  className="pl-9"
+                  placeholder="Cari nama alat / kode unit / kode model"
+                  value={search}
+                  onChange={(e) => setSearch(e.target.value)}
+                />
+              </div>
+              <Select value={labFilter} onValueChange={setLabFilter}>
+                <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Lab" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Lab</SelectItem>
+                  {filterLabs.map((lab) => (
+                    <SelectItem key={lab.id} value={lab.id}>
+                      {lab.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <Select value={categoryFilter} onValueChange={setCategoryFilter}>
+                <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Kategori" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Semua Kategori</SelectItem>
+                  {filterCategories.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
+                </SelectContent>
+              </Select>
+              <Button type="submit" variant="outline" disabled={isPendingNavigation}>
+                {isPendingNavigation ? "Memuat..." : "Terapkan"}
+              </Button>
+              <Button
+                type="button"
+                variant="ghost"
+                disabled={isPendingNavigation}
+                onClick={() => {
+                  setSearch("")
+                  setLabFilter("all")
+                  setCategoryFilter("all")
+                  applyFiltersToUrl({ q: "", lab: "all", category: "all", page: 1 })
+                }}
+              >
+                Reset
+              </Button>
+            </form>
             {canManage && <Dialog open={showAdd} onOpenChange={setShowAdd}>
               <DialogTrigger asChild>
-                <Button><Plus className="size-4" />Tambah Alat</Button>
+                <Button type="button"><Plus className="size-4" />Tambah Alat</Button>
               </DialogTrigger>
               <DialogContent className="max-h-[90vh] max-w-3xl overflow-y-auto">
                 <DialogHeader>
@@ -400,7 +402,7 @@ export function ToolsPageClient({
                 </form>
               </DialogContent>
             </Dialog>}
-          </form>
+          </div>
         </CardContent>
       </Card>
 
