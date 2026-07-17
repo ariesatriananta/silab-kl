@@ -2,6 +2,7 @@ import { z } from "zod"
 
 const serverEnvSchema = z.object({
   DATABASE_URL: z.string().min(1, "DATABASE_URL wajib diisi"),
+  DB_DRIVER: z.enum(["neon", "postgres"]).default("neon"),
   AUTH_SECRET: z.string().min(1).optional(),
   NODE_ENV: z.enum(["development", "test", "production"]).default("development"),
 })
@@ -15,6 +16,7 @@ export function getServerEnv(): ServerEnv {
 
   cachedEnv = serverEnvSchema.parse({
     DATABASE_URL: process.env.DATABASE_URL,
+    DB_DRIVER: process.env.DB_DRIVER,
     AUTH_SECRET: process.env.AUTH_SECRET,
     NODE_ENV: process.env.NODE_ENV,
   })

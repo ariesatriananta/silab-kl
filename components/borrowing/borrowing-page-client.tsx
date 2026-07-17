@@ -9,6 +9,8 @@ import {
   ChevronDown,
   Clock,
   Eye,
+  FileDown,
+  FileSpreadsheet,
   FlaskConical,
   Lightbulb,
   Minus,
@@ -52,6 +54,14 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog"
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import {
@@ -397,6 +407,8 @@ export function BorrowingPageClient({
     scope: "all" | "mine" | "my_labs" | "waiting_me"
     studyProgram: "all" | "Sanitasi" | "Sanitasi Lingkungan"
     courseName: string
+    startDate: string
+    endDate: string
   }
   prefill?: {
     openCreate?: boolean
@@ -414,6 +426,8 @@ export function BorrowingPageClient({
     initialListFilters.studyProgram,
   )
   const [courseNameFilter, setCourseNameFilter] = useState(initialListFilters.courseName)
+  const [startDateFilter, setStartDateFilter] = useState(initialListFilters.startDate)
+  const [endDateFilter, setEndDateFilter] = useState(initialListFilters.endDate)
   const [studentHintOpen, setStudentHintOpen] = useState(false)
   const [selectedBorrowingId, setSelectedBorrowingId] = useState<string | null>(null)
   const [detailMap, setDetailMap] = useState<Record<string, BorrowingDetail>>(details)
@@ -491,6 +505,9 @@ export function BorrowingPageClient({
   const canHandover = role === "admin" || role === "petugas_plp"
   const canCreate = role !== "dosen"
   const isMahasiswa = role === "mahasiswa"
+  const canExport = role === "admin" || role === "petugas_plp"
+  const exportQuery = searchParams.toString()
+  const exportQuerySuffix = exportQuery ? `?${exportQuery}` : ""
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -498,8 +515,17 @@ export function BorrowingPageClient({
       setScopeFilter(initialListFilters.scope)
       setStudyProgramFilter(initialListFilters.studyProgram)
       setCourseNameFilter(initialListFilters.courseName)
+      setStartDateFilter(initialListFilters.startDate)
+      setEndDateFilter(initialListFilters.endDate)
     })
-  }, [initialListFilters.status, initialListFilters.scope, initialListFilters.studyProgram, initialListFilters.courseName])
+  }, [
+    initialListFilters.status,
+    initialListFilters.scope,
+    initialListFilters.studyProgram,
+    initialListFilters.courseName,
+    initialListFilters.startDate,
+    initialListFilters.endDate,
+  ])
 
   useEffect(() => {
     setDetailMap(details)
@@ -695,6 +721,8 @@ export function BorrowingPageClient({
       scope: "all" | "mine" | "my_labs" | "waiting_me"
       studyProgram: "all" | "Sanitasi" | "Sanitasi Lingkungan"
       courseName: string
+      startDate: string
+      endDate: string
       page: number
     }>,
   ) => {
@@ -703,6 +731,8 @@ export function BorrowingPageClient({
     const nextScope = next.scope ?? scopeFilter
     const nextStudyProgram = next.studyProgram ?? studyProgramFilter
     const nextCourseName = (next.courseName ?? courseNameFilter).trim()
+    const nextStartDate = next.startDate ?? startDateFilter
+    const nextEndDate = next.endDate ?? endDateFilter
     const nextPage = next.page ?? 1
     if (nextStatus !== "all") params.set("status", nextStatus)
     else params.delete("status")
@@ -713,6 +743,10 @@ export function BorrowingPageClient({
     else params.delete("studyProgram")
     if (nextCourseName.length > 0) params.set("courseName", nextCourseName)
     else params.delete("courseName")
+    if (nextStartDate) params.set("startDate", nextStartDate)
+    else params.delete("startDate")
+    if (nextEndDate) params.set("endDate", nextEndDate)
+    else params.delete("endDate")
     if (nextPage > 1) params.set("page", String(nextPage))
     else params.delete("page")
     const target = params.toString() ? `${pathname}?${params.toString()}` : pathname
@@ -1576,7 +1610,7 @@ export function BorrowingPageClient({
         <CardContent className="flex flex-col gap-3">
           <div
             className={`grid gap-3 lg:grid-cols-2 ${
-              isMahasiswa ? "xl:grid-cols-3" : "xl:grid-cols-4"
+              isMahasiswa ? "xl:grid-cols-5" : "xl:grid-cols-6"
             } xl:items-center`}
           >
             <Select
@@ -1660,7 +1694,45 @@ export function BorrowingPageClient({
                 onBlur={() => applyListFilters({ courseName: courseNameFilter, page: 1 })}
               />
             </div>
+            <div className="relative">
+              <Input
+                id="filterStartDate"
+                type="date"
+                aria-label="Mulai periode"
+                value={startDateFilter}
+                onChange={(e) => setStartDateFilter(e.target.value)}
+              />
+              {!startDateFilter && (
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center bg-card pr-2 text-sm text-muted-foreground">
+                  Mulai periode
+                </span>
+              )}
+            </div>
+            <div className="relative">
+              <Input
+                id="filterEndDate"
+                type="date"
+                aria-label="Selesai periode"
+                value={endDateFilter}
+                onChange={(e) => setEndDateFilter(e.target.value)}
+              />
+              {!endDateFilter && (
+                <span className="pointer-events-none absolute inset-y-0 left-3 flex items-center bg-card pr-2 text-sm text-muted-foreground">
+                  Selesai periode
+                </span>
+              )}
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => applyListFilters({ startDate: startDateFilter, endDate: endDateFilter, page: 1 })}
+            >
+              Terapkan Periode
+            </Button>
           </div>
+          <p className="text-xs text-muted-foreground">
+            Periode memakai rentang rencana pakai dan rencana kembali; transaksi yang bersinggungan dengan periode tetap ditampilkan.
+          </p>
         </CardContent>
       </Card>
 
@@ -1670,6 +1742,52 @@ export function BorrowingPageClient({
             <CardTitle className="text-base font-semibold text-card-foreground">
               Daftar Peminjaman ({pagination.totalItems})
             </CardTitle>
+            {canExport && (
+              <DropdownMenu>
+                <DropdownMenuTrigger asChild>
+                  <Button type="button" size="sm" variant="outline">
+                    <FileDown className="size-4" /> Export
+                  </Button>
+                </DropdownMenuTrigger>
+                <DropdownMenuContent align="end" className="w-64 p-1.5">
+                  <DropdownMenuLabel className="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Tarik data sesuai filter aktif
+                  </DropdownMenuLabel>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuItem asChild className="min-h-11 rounded-md px-2.5">
+                    <Link href={`/api/borrowing/export/excel${exportQuerySuffix}`}>
+                      <FileSpreadsheet className="size-4 text-emerald-600" />
+                      <span className="flex flex-col gap-0.5">
+                        <span className="font-medium">Download Excel</span>
+                        <span className="text-xs text-muted-foreground">Sheet Peminjaman + Penggunaan Bahan</span>
+                      </span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuSeparator />
+                  <DropdownMenuLabel className="px-2 py-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                    Cetak PDF via browser
+                  </DropdownMenuLabel>
+                  <DropdownMenuItem asChild className="min-h-11 rounded-md px-2.5">
+                    <Link href={`/borrowing-report/peminjaman${exportQuerySuffix}`} target="_blank" rel="noreferrer">
+                      <Printer className="size-4 text-primary" />
+                      <span className="flex flex-col gap-0.5">
+                        <span className="font-medium">Rekap Peminjaman</span>
+                        <span className="text-xs text-muted-foreground">Buka tabel alat untuk dicetak</span>
+                      </span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-11 rounded-md px-2.5">
+                    <Link href={`/borrowing-report/penggunaan-bahan${exportQuerySuffix}`} target="_blank" rel="noreferrer">
+                      <Printer className="size-4 text-primary" />
+                      <span className="flex flex-col gap-0.5">
+                        <span className="font-medium">Rekap Penggunaan Bahan</span>
+                        <span className="text-xs text-muted-foreground">Buka tabel bahan untuk dicetak</span>
+                      </span>
+                    </Link>
+                  </DropdownMenuItem>
+                </DropdownMenuContent>
+              </DropdownMenu>
+            )}
             <p className="text-xs text-muted-foreground">
               Halaman {pagination.page}/{pagination.totalPages} • {pagination.totalItems} transaksi
             </p>

@@ -1,5 +1,6 @@
 "use client"
 
+import Link from "next/link"
 import { usePathname, useRouter, useSearchParams } from "next/navigation"
 import { useActionState, useEffect, useMemo, useRef, useState, useTransition } from "react"
 import {
@@ -7,6 +8,8 @@ import {
   CheckCircle2,
   Clock,
   Eye,
+  FileDown,
+  FileSpreadsheet,
   GraduationCap,
   Pencil,
   Plus,
@@ -56,6 +59,7 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs"
 import { Textarea } from "@/components/ui/textarea"
 import { Empty, EmptyContent, EmptyDescription, EmptyHeader, EmptyMedia, EmptyTitle } from "@/components/ui/empty"
 import { ActionKpiTile } from "@/components/ui/action-kpi-tile"
+import { DropdownMenu, DropdownMenuContent, DropdownMenuItem, DropdownMenuLabel, DropdownMenuSeparator, DropdownMenuTrigger } from "@/components/ui/dropdown-menu"
 import { useToast } from "@/hooks/use-toast"
 
 export type LabUsageLabOption = { id: string; name: string }
@@ -126,6 +130,7 @@ export function LabUsagePageClient({
   history,
   bookingRequests,
   historyPagination,
+  initialFilters,
 }: {
   role: Role
   labs: LabUsageLabOption[]
@@ -133,11 +138,17 @@ export function LabUsagePageClient({
   history: LabUsageHistoryRow[]
   bookingRequests: LabUsageBookingRequestRow[]
   historyPagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
+  initialFilters: { labId: string; startDate: string; endDate: string }
 }) {
   const router = useRouter()
   const pathname = usePathname()
   const searchParams = useSearchParams()
   const [historyPagingPending, startHistoryPagingTransition] = useTransition()
+  const [historyLabFilter, setHistoryLabFilter] = useState(initialFilters.labId || "all")
+  const [historyStartDate, setHistoryStartDate] = useState(initialFilters.startDate)
+  const [historyEndDate, setHistoryEndDate] = useState(initialFilters.endDate)
+  const exportQuery = searchParams.toString()
+  const exportQuerySuffix = exportQuery ? `?${exportQuery}` : ""
   const [activeTab, setActiveTab] = useState<"booking" | "schedule" | "history">(
     bookingRequests.length > 0 ? "booking" : "schedule",
   )
@@ -220,6 +231,14 @@ export function LabUsagePageClient({
     startHistoryPagingTransition(() => {
       router.replace(target, { scroll: false })
     })
+  }
+  const applyHistoryFilters = () => {
+    const params = new URLSearchParams(searchParams.toString())
+    if (historyLabFilter !== "all") params.set("labId", historyLabFilter); else params.delete("labId")
+    if (historyStartDate) params.set("startDate", historyStartDate); else params.delete("startDate")
+    if (historyEndDate) params.set("endDate", historyEndDate); else params.delete("endDate")
+    params.delete("histPage")
+    router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
 
   useEffect(() => {
@@ -863,9 +882,15 @@ export function LabUsagePageClient({
             <CardHeader className="pb-3">
               <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                 <CardTitle className="text-base font-semibold text-card-foreground">Riwayat Penggunaan Lab</CardTitle>
-                <p className="text-xs text-muted-foreground">
+                <div className="grid gap-2 md:grid-cols-4">
+                  <Select value={historyLabFilter} onValueChange={setHistoryLabFilter}><SelectTrigger><SelectValue placeholder="Semua ruangan" /></SelectTrigger><SelectContent><SelectItem value="all">Semua ruangan</SelectItem>{labs.map((lab) => <SelectItem key={lab.id} value={lab.id}>{lab.name}</SelectItem>)}</SelectContent></Select>
+                  <Input type="date" aria-label="Mulai periode" value={historyStartDate} onChange={(e) => setHistoryStartDate(e.target.value)} />
+                  <Input type="date" aria-label="Selesai periode" value={historyEndDate} onChange={(e) => setHistoryEndDate(e.target.value)} />
+                  <Button type="button" variant="outline" onClick={applyHistoryFilters}>Terapkan</Button>
+                </div>
+                <div className="flex items-center gap-3"><p className="text-xs text-muted-foreground">
                   Halaman {historyPagination.page}/{historyPagination.totalPages} • {historyPagination.totalItems} riwayat
-                </p>
+                </p><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" size="sm" variant="outline"><FileDown className="size-4" /> Export</Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-64 p-1.5"><DropdownMenuLabel>Tarik data sesuai filter aktif</DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem asChild><Link href={`/api/lab-usage/export/excel${exportQuerySuffix}`}><FileSpreadsheet className="size-4 text-emerald-600" /> Download Excel: Ruangan + Presensi</Link></DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuLabel>Cetak PDF via browser</DropdownMenuLabel><DropdownMenuItem asChild><Link href={`/lab-usage-report/penggunaan-ruangan${exportQuerySuffix}`} target="_blank"><Printer className="size-4 text-primary" /> Rekap Penggunaan Ruangan</Link></DropdownMenuItem><DropdownMenuItem asChild><Link href={`/lab-usage-report/presensi${exportQuerySuffix}`} target="_blank"><Printer className="size-4 text-primary" /> Rekap Presensi</Link></DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
               </div>
             </CardHeader>
             <CardContent className="px-0">

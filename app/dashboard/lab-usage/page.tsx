@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { and, asc, desc, eq, inArray, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gte, inArray, lte, sql } from "drizzle-orm"
 
 import {
   LabUsagePageClient,
@@ -111,6 +111,19 @@ export default async function LabUsagePage({
 
   const sp = (await searchParams) ?? {}
   const histPageRaw = Array.isArray(sp.histPage) ? sp.histPage[0] : sp.histPage
+  const labIdRaw = Array.isArray(sp.labId) ? sp.labId[0] : sp.labId
+  const startDateRaw = Array.isArray(sp.startDate) ? sp.startDate[0] : sp.startDate
+  const endDateRaw = Array.isArray(sp.endDate) ? sp.endDate[0] : sp.endDate
+  const startDate = /^\d{4}-\d{2}-\d{2}$/.test(startDateRaw ?? "") ? startDateRaw ?? "" : ""
+  const endDate = /^\d{4}-\d{2}-\d{2}$/.test(endDateRaw ?? "") ? endDateRaw ?? "" : ""
+  const startAt = startDate ? new Date(`${startDate}T00:00:00.000+07:00`) : null
+  const endAt = endDate ? new Date(`${endDate}T23:59:59.999+07:00`) : null
+  const filteredUsageWhere = and(
+    usageFilter,
+    labIdRaw ? eq(labUsageLogs.labId, labIdRaw) : undefined,
+    startAt ? gte(labUsageLogs.endedAt, startAt) : undefined,
+    endAt ? lte(labUsageLogs.startedAt, endAt) : undefined,
+  )
   const historyPage = Math.max(1, Number.parseInt(histPageRaw ?? "1", 10) || 1)
   const historyPageSize = 20
   const historyOffset = (historyPage - 1) * historyPageSize
@@ -148,14 +161,14 @@ export default async function LabUsagePage({
       })
       .from(labUsageLogs)
       .innerJoin(labs, eq(labs.id, labUsageLogs.labId))
-      .where(usageFilter)
+      .where(filteredUsageWhere)
       .orderBy(desc(labUsageLogs.startedAt))
       .limit(historyPageSize)
       .offset(historyOffset),
     db
       .select({ total: sql<number>`count(*)` })
       .from(labUsageLogs)
-      .where(usageFilter),
+      .where(filteredUsageWhere),
     db
       .select({
         id: labRoomBookingRequests.id,
@@ -271,6 +284,7 @@ export default async function LabUsagePage({
       schedules={schedules}
       history={history}
       bookingRequests={bookingRequests}
+      initialFilters={{ labId: labIdRaw ?? "", startDate, endDate }}
       historyPagination={{
         page: Math.min(historyPage, totalHistoryPages),
         pageSize: historyPageSize,

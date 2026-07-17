@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation"
-import { and, asc, desc, eq, ilike, inArray, or, sql } from "drizzle-orm"
+import { and, asc, desc, eq, gte, ilike, inArray, lte, or, sql } from "drizzle-orm"
 
 import {
   type BorrowingCreateApprovalRouteOption,
@@ -90,6 +90,12 @@ function fmtDateTime(date: Date | null) {
   }).format(date)
 }
 
+function parseWibBoundary(value: string, endOfDay: boolean) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return null
+  const date = new Date(`${value}T${endOfDay ? "23:59:59.999" : "00:00:00.000"}+07:00`)
+  return Number.isNaN(date.getTime()) ? null : date
+}
+
 function getDisplayBorrowAt(input: {
   status: ReturnType<typeof mapBorrowingDisplayStatus>
   plannedBorrowAt: Date | null
@@ -170,6 +176,8 @@ async function getBorrowingData(
     scope: BorrowingPageScopeFilter
     studyProgram: "all" | "Sanitasi" | "Sanitasi Lingkungan"
     courseName: string
+    startDate: string
+    endDate: string
   },
 ) {
   const accessibleLabIds = await getAccessibleLabIds(role, userId)
@@ -280,8 +288,14 @@ async function getBorrowingData(
   const courseNameWhere = filters.courseName.trim()
     ? ilike(borrowingTransactions.courseName, `%${filters.courseName.trim()}%`)
     : undefined
+  const periodStart = parseWibBoundary(filters.startDate, false)
+  const periodEnd = parseWibBoundary(filters.endDate, true)
+  const periodWhere = and(
+    periodStart ? gte(borrowingTransactions.plannedReturnAt, periodStart) : undefined,
+    periodEnd ? lte(borrowingTransactions.plannedBorrowAt, periodEnd) : undefined,
+  )
 
-  const finalWhere = and(roleBaseWhere, scopeWhere, statusWhere, studyProgramWhere, courseNameWhere)
+  const finalWhere = and(roleBaseWhere, scopeWhere, statusWhere, studyProgramWhere, courseNameWhere, periodWhere)
   const shouldApplyPendingTriageSort = filters.status === "pending" || filters.scope === "waiting_me"
   const pendingTriageRank = sql<number>`
     case
@@ -703,6 +717,8 @@ export default async function BorrowingPage({
   const scopeParamRaw = Array.isArray(sp.scope) ? sp.scope[0] : sp.scope
   const studyProgramParamRaw = Array.isArray(sp.studyProgram) ? sp.studyProgram[0] : sp.studyProgram
   const courseNameParamRaw = Array.isArray(sp.courseName) ? sp.courseName[0] : sp.courseName
+  const startDateParamRaw = Array.isArray(sp.startDate) ? sp.startDate[0] : sp.startDate
+  const endDateParamRaw = Array.isArray(sp.endDate) ? sp.endDate[0] : sp.endDate
   const statusParam = ([
     "all",
     "pending",
@@ -727,13 +743,22 @@ export default async function BorrowingPage({
     ? ((studyProgramParamRaw ?? "all") as "all" | "Sanitasi" | "Sanitasi Lingkungan")
     : "all"
   const courseNameParam = (courseNameParamRaw ?? "").trim()
+  const startDateParam = /^\d{4}-\d{2}-\d{2}$/.test(startDateParamRaw ?? "") ? startDateParamRaw ?? "" : ""
+  const endDateParam = /^\d{4}-\d{2}-\d{2}$/.test(endDateParamRaw ?? "") ? endDateParamRaw ?? "" : ""
 
   const { rows, details, accessibleLabIds, pagination, activeFilters } = await getBorrowingData(
     role,
     currentUserId,
     page,
     20,
-    { status: statusParam, scope: scopeParam, studyProgram: studyProgramParam, courseName: courseNameParam },
+    {
+      status: statusParam,
+      scope: scopeParam,
+      studyProgram: studyProgramParam,
+      courseName: courseNameParam,
+      startDate: startDateParam,
+      endDate: endDateParam,
+    },
   )
   const options = await getCreateOptions(role, currentUserId, accessibleLabIds)
   const prefill = {
