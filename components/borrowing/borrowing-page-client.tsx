@@ -13,6 +13,7 @@ import {
   FileSpreadsheet,
   FlaskConical,
   Lightbulb,
+  Loader2,
   Minus,
   Package,
   PackagePlus,
@@ -506,6 +507,7 @@ export function BorrowingPageClient({
   })
   const detailApproveFormRef = useRef<HTMLFormElement>(null)
   const detailRejectFormRef = useRef<HTMLFormElement>(null)
+  const exportResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   const [createState, createAction, createPending] = useActionState(
     createBorrowingRequestAction,
@@ -541,6 +543,70 @@ export function BorrowingPageClient({
   const canExport = role === "admin" || role === "petugas_plp"
   const exportQuery = searchParams.toString()
   const exportQuerySuffix = exportQuery ? `?${exportQuery}` : ""
+  const [exportPendingLabel, setExportPendingLabel] = useState<string | null>(null)
+
+  const startTransientExportPending = (label: string) => {
+    setExportPendingLabel(label)
+    if (exportResetTimerRef.current) clearTimeout(exportResetTimerRef.current)
+    exportResetTimerRef.current = setTimeout(() => {
+      setExportPendingLabel(null)
+      exportResetTimerRef.current = null
+    }, 2_500)
+  }
+
+  const downloadExportFile = async (url: string, label: string) => {
+    if (exportPendingLabel) return
+    if (exportResetTimerRef.current) {
+      clearTimeout(exportResetTimerRef.current)
+      exportResetTimerRef.current = null
+    }
+    setExportPendingLabel(label)
+    try {
+      const response = await fetch(url, { credentials: "same-origin" })
+      if (!response.ok) {
+        let message = "Gagal menyiapkan file export."
+        try {
+          const body = (await response.json()) as { message?: string }
+          if (body.message) message = body.message
+        } catch {
+          message = response.statusText || message
+        }
+        const error = new Error(message)
+        error.name = response.status === 413 ? "ExportLimitError" : "ExportError"
+        throw error
+      }
+
+      const blob = await response.blob()
+      const disposition = response.headers.get("Content-Disposition") ?? ""
+      const filenameMatch =
+        disposition.match(/filename\*=UTF-8''([^;]+)/i) ?? disposition.match(/filename="?([^";]+)"?/i)
+      const filename = filenameMatch?.[1]
+        ? decodeURIComponent(filenameMatch[1])
+        : `export-${new Date().toISOString().slice(0, 10)}`
+      const blobUrl = window.URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = blobUrl
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (error) {
+      toast({
+        title: error instanceof Error && error.name === "ExportLimitError" ? "Batas export terlampaui" : "Export gagal",
+        description: error instanceof Error ? error.message : "Gagal menyiapkan file export.",
+        variant: "destructive",
+      })
+    } finally {
+      setExportPendingLabel(null)
+    }
+  }
+
+  useEffect(() => {
+    return () => {
+      if (exportResetTimerRef.current) clearTimeout(exportResetTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     queueMicrotask(() => {
@@ -1985,10 +2051,15 @@ export function BorrowingPageClient({
               Daftar Peminjaman ({pagination.totalItems})
             </CardTitle>
             {canExport && (
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button type="button" size="sm" variant="outline">
-                    <FileDown className="size-4" /> Export
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                  <Button type="button" size="sm" variant="outline" disabled={Boolean(exportPendingLabel)}>
+                    {exportPendingLabel ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      <FileDown className="size-4" />
+                    )}
+                    {exportPendingLabel ? exportPendingLabel : "Export"}
                   </Button>
                 </DropdownMenuTrigger>
                 <DropdownMenuContent align="end" className="w-64 p-1.5">
@@ -1997,7 +2068,13 @@ export function BorrowingPageClient({
                   </DropdownMenuLabel>
                   <DropdownMenuSeparator />
                   <DropdownMenuItem asChild className="min-h-11 rounded-md px-2.5">
-                    <Link href={`/api/borrowing/export/excel${exportQuerySuffix}`}>
+                    <Link
+                      href={`/api/borrowing/export/excel${exportQuerySuffix}`}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void downloadExportFile(`/api/borrowing/export/excel${exportQuerySuffix}`, "Menyiapkan Excel...")
+                      }}
+                    >
                       <FileSpreadsheet className="size-4 text-emerald-600" />
                       <span className="flex flex-col gap-0.5">
                         <span className="font-medium">Download Excel</span>
@@ -2010,7 +2087,12 @@ export function BorrowingPageClient({
                     Cetak PDF via browser
                   </DropdownMenuLabel>
                   <DropdownMenuItem asChild className="min-h-11 rounded-md px-2.5">
-                    <Link href={`/borrowing-report/peminjaman${exportQuerySuffix}`} target="_blank" rel="noreferrer">
+                    <Link
+                      href={`/borrowing-report/peminjaman${exportQuerySuffix}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => startTransientExportPending("Membuka PDF...")}
+                    >
                       <Printer className="size-4 text-primary" />
                       <span className="flex flex-col gap-0.5">
                         <span className="font-medium">Rekap Peminjaman</span>
@@ -2019,11 +2101,49 @@ export function BorrowingPageClient({
                     </Link>
                   </DropdownMenuItem>
                   <DropdownMenuItem asChild className="min-h-11 rounded-md px-2.5">
-                    <Link href={`/borrowing-report/penggunaan-bahan${exportQuerySuffix}`} target="_blank" rel="noreferrer">
+                    <Link
+                      href={`/borrowing-report/penggunaan-bahan${exportQuerySuffix}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={() => startTransientExportPending("Membuka PDF...")}
+                    >
                       <Printer className="size-4 text-primary" />
                       <span className="flex flex-col gap-0.5">
                         <span className="font-medium">Rekap Penggunaan Bahan</span>
                         <span className="text-xs text-muted-foreground">Buka tabel bahan untuk dicetak</span>
+                      </span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-11 rounded-md px-2.5">
+                    <Link
+                      href={`/api/borrowing/export/proofs-zip${exportQuerySuffix}`}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void downloadExportFile(`/api/borrowing/export/proofs-zip${exportQuerySuffix}`, "Membuat ZIP...")
+                      }}
+                    >
+                      <Printer className="size-4 text-primary" />
+                      <span className="flex flex-col gap-0.5">
+                        <span className="font-medium">ZIP Lembar Peminjaman Alat</span>
+                        <span className="text-xs text-muted-foreground">PDF terpisah per transaksi</span>
+                      </span>
+                    </Link>
+                  </DropdownMenuItem>
+                  <DropdownMenuItem asChild className="min-h-11 rounded-md px-2.5">
+                    <Link
+                      href={`/api/borrowing/export/consumable-proofs-zip${exportQuerySuffix}`}
+                      onClick={(event) => {
+                        event.preventDefault()
+                        void downloadExportFile(
+                          `/api/borrowing/export/consumable-proofs-zip${exportQuerySuffix}`,
+                          "Membuat ZIP...",
+                        )
+                      }}
+                    >
+                      <Printer className="size-4 text-primary" />
+                      <span className="flex flex-col gap-0.5">
+                        <span className="font-medium">ZIP Permintaan Bahan</span>
+                        <span className="text-xs text-muted-foreground">PDF bahan habis pakai terpisah</span>
                       </span>
                     </Link>
                   </DropdownMenuItem>

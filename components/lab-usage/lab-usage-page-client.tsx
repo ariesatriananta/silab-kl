@@ -11,6 +11,7 @@ import {
   FileDown,
   FileSpreadsheet,
   GraduationCap,
+  Loader2,
   Pencil,
   Plus,
   Printer,
@@ -196,6 +197,65 @@ export function LabUsagePageClient({
 
   const { toast } = useToast()
   const shownToastKeys = useRef<string[]>([])
+  const exportResetTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const [exportPendingLabel, setExportPendingLabel] = useState<string | null>(null)
+
+  const startTransientExportPending = (label: string) => {
+    setExportPendingLabel(label)
+    if (exportResetTimerRef.current) clearTimeout(exportResetTimerRef.current)
+    exportResetTimerRef.current = setTimeout(() => {
+      setExportPendingLabel(null)
+      exportResetTimerRef.current = null
+    }, 2_500)
+  }
+
+  const downloadExportFile = async (url: string, label: string) => {
+    if (exportPendingLabel) return
+    if (exportResetTimerRef.current) {
+      clearTimeout(exportResetTimerRef.current)
+      exportResetTimerRef.current = null
+    }
+    setExportPendingLabel(label)
+    try {
+      const response = await fetch(url, { credentials: "same-origin" })
+      if (!response.ok) {
+        let message = "Gagal menyiapkan file export."
+        try {
+          const body = (await response.json()) as { message?: string }
+          if (body.message) message = body.message
+        } catch {
+          message = response.statusText || message
+        }
+        const error = new Error(message)
+        error.name = response.status === 413 ? "ExportLimitError" : "ExportError"
+        throw error
+      }
+
+      const blob = await response.blob()
+      const disposition = response.headers.get("Content-Disposition") ?? ""
+      const filenameMatch =
+        disposition.match(/filename\*=UTF-8''([^;]+)/i) ?? disposition.match(/filename="?([^";]+)"?/i)
+      const filename = filenameMatch?.[1]
+        ? decodeURIComponent(filenameMatch[1])
+        : `export-${new Date().toISOString().slice(0, 10)}`
+      const blobUrl = window.URL.createObjectURL(blob)
+      const anchor = document.createElement("a")
+      anchor.href = blobUrl
+      anchor.download = filename
+      document.body.appendChild(anchor)
+      anchor.click()
+      anchor.remove()
+      window.URL.revokeObjectURL(blobUrl)
+    } catch (error) {
+      toast({
+        title: error instanceof Error && error.name === "ExportLimitError" ? "Batas export terlampaui" : "Export gagal",
+        description: error instanceof Error ? error.message : "Gagal menyiapkan file export.",
+        variant: "destructive",
+      })
+    } finally {
+      setExportPendingLabel(null)
+    }
+  }
 
   const filteredSchedulesForUsageLab = useMemo(
     () => schedules.filter((s) => s.labId === usageLabId),
@@ -240,6 +300,12 @@ export function LabUsagePageClient({
     params.delete("histPage")
     router.replace(`${pathname}?${params.toString()}`, { scroll: false })
   }
+
+  useEffect(() => {
+    return () => {
+      if (exportResetTimerRef.current) clearTimeout(exportResetTimerRef.current)
+    }
+  }, [])
 
   useEffect(() => {
     const states = [
@@ -890,7 +956,7 @@ export function LabUsagePageClient({
                 </div>
                 <div className="flex items-center gap-3"><p className="text-xs text-muted-foreground">
                   Halaman {historyPagination.page}/{historyPagination.totalPages} • {historyPagination.totalItems} riwayat
-                </p><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" size="sm" variant="outline"><FileDown className="size-4" /> Export</Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-64 p-1.5"><DropdownMenuLabel>Tarik data sesuai filter aktif</DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem asChild><Link href={`/api/lab-usage/export/excel${exportQuerySuffix}`}><FileSpreadsheet className="size-4 text-emerald-600" /> Download Excel: Ruangan + Presensi</Link></DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuLabel>Cetak PDF via browser</DropdownMenuLabel><DropdownMenuItem asChild><Link href={`/lab-usage-report/penggunaan-ruangan${exportQuerySuffix}`} target="_blank"><Printer className="size-4 text-primary" /> Rekap Penggunaan Ruangan</Link></DropdownMenuItem><DropdownMenuItem asChild><Link href={`/lab-usage-report/presensi${exportQuerySuffix}`} target="_blank"><Printer className="size-4 text-primary" /> Rekap Presensi</Link></DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
+                </p><DropdownMenu><DropdownMenuTrigger asChild><Button type="button" size="sm" variant="outline" disabled={Boolean(exportPendingLabel)}>{exportPendingLabel ? <Loader2 className="size-4 animate-spin" /> : <FileDown className="size-4" />} {exportPendingLabel ?? "Export"}</Button></DropdownMenuTrigger><DropdownMenuContent align="end" className="w-72 p-1.5"><DropdownMenuLabel>Tarik data sesuai filter aktif</DropdownMenuLabel><DropdownMenuSeparator /><DropdownMenuItem asChild><Link href={`/api/lab-usage/export/excel${exportQuerySuffix}`} onClick={(event) => { event.preventDefault(); void downloadExportFile(`/api/lab-usage/export/excel${exportQuerySuffix}`, "Menyiapkan Excel...") }}><FileSpreadsheet className="size-4 text-emerald-600" /> Download Excel: Ruangan + Presensi</Link></DropdownMenuItem><DropdownMenuSeparator /><DropdownMenuLabel>Cetak PDF via browser</DropdownMenuLabel><DropdownMenuItem asChild><Link href={`/lab-usage-report/penggunaan-ruangan${exportQuerySuffix}`} target="_blank" onClick={() => startTransientExportPending("Membuka PDF...")}><Printer className="size-4 text-primary" /> Rekap Penggunaan Ruangan</Link></DropdownMenuItem><DropdownMenuItem asChild><Link href={`/lab-usage-report/presensi${exportQuerySuffix}`} target="_blank" onClick={() => startTransientExportPending("Membuka PDF...")}><Printer className="size-4 text-primary" /> Rekap Presensi</Link></DropdownMenuItem><DropdownMenuItem asChild><Link href={`/api/lab-usage/export/proofs-zip${exportQuerySuffix}`} onClick={(event) => { event.preventDefault(); void downloadExportFile(`/api/lab-usage/export/proofs-zip${exportQuerySuffix}`, "Membuat ZIP...") }}><Printer className="size-4 text-primary" /> ZIP Dokumen Penggunaan Ruang</Link></DropdownMenuItem></DropdownMenuContent></DropdownMenu></div>
               </div>
             </CardHeader>
             <CardContent className="px-0">
