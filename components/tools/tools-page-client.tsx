@@ -34,6 +34,8 @@ export type ToolRow = {
   condition: "baik" | "maintenance" | "damaged"
   assetNotes: string | null
   isActive: boolean
+  retiredAt: string | null
+  retirementReason: string | null
   modelCode: string
   name: string
   brand: string | null
@@ -128,7 +130,7 @@ export function ToolsPageClient({
   filterCategories: string[]
   kpi: { totalUnits: number; available: number; borrowed: number; issue: number }
   pagination: { page: number; pageSize: number; totalItems: number; totalPages: number }
-  initialFilters: { q: string; lab: string; category: string }
+  initialFilters: { q: string; lab: string; category: string; assetStatus: "active" | "inactive" | "all" }
 }) {
   const router = useRouter()
   const pathname = usePathname()
@@ -138,6 +140,7 @@ export function ToolsPageClient({
   const [search, setSearch] = useState(initialFilters.q)
   const [labFilter, setLabFilter] = useState(initialFilters.lab)
   const [categoryFilter, setCategoryFilter] = useState(initialFilters.category)
+  const [assetStatusFilter, setAssetStatusFilter] = useState<"active" | "inactive" | "all">(initialFilters.assetStatus)
   const [showAdd, setShowAdd] = useState(false)
   const [showQr, setShowQr] = useState<ToolRow | null>(null)
   const [qrPreviewDataUrl, setQrPreviewDataUrl] = useState<string | null>(null)
@@ -176,14 +179,16 @@ export function ToolsPageClient({
       setSearch(initialFilters.q)
       setLabFilter(initialFilters.lab)
       setCategoryFilter(initialFilters.category)
+      setAssetStatusFilter(initialFilters.assetStatus)
     })
-  }, [initialFilters.q, initialFilters.lab, initialFilters.category])
+  }, [initialFilters.q, initialFilters.lab, initialFilters.category, initialFilters.assetStatus])
 
-  const applyFiltersToUrl = (next?: Partial<{ q: string; lab: string; category: string; page: number }>) => {
+  const applyFiltersToUrl = (next?: Partial<{ q: string; lab: string; category: string; assetStatus: "active" | "inactive" | "all"; page: number }>) => {
     const params = new URLSearchParams(searchParams.toString())
     const q = (next?.q ?? search).trim()
     const lab = next?.lab ?? labFilter
     const category = next?.category ?? categoryFilter
+    const assetStatus = next?.assetStatus ?? assetStatusFilter
     const page = next?.page ?? 1
 
     if (q) params.set("q", q)
@@ -192,6 +197,8 @@ export function ToolsPageClient({
     else params.delete("lab")
     if (category && category !== "all") params.set("category", category)
     else params.delete("category")
+    if (assetStatus !== "active") params.set("assetStatus", assetStatus)
+    else params.delete("assetStatus")
     if (page > 1) params.set("page", String(page))
     else params.delete("page")
 
@@ -319,6 +326,14 @@ export function ToolsPageClient({
                   {filterCategories.map((cat) => <SelectItem key={cat} value={cat}>{cat}</SelectItem>)}
                 </SelectContent>
               </Select>
+              <Select value={assetStatusFilter} onValueChange={(value) => setAssetStatusFilter(value as typeof assetStatusFilter)}>
+                <SelectTrigger className="w-full sm:w-44"><SelectValue placeholder="Status Data" /></SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="active">Aktif</SelectItem>
+                  <SelectItem value="inactive">Nonaktif / Arsip</SelectItem>
+                  <SelectItem value="all">Semua Status</SelectItem>
+                </SelectContent>
+              </Select>
               <Button type="submit" variant="outline" disabled={isPendingNavigation}>
                 {isPendingNavigation ? "Memuat..." : "Terapkan"}
               </Button>
@@ -330,7 +345,8 @@ export function ToolsPageClient({
                   setSearch("")
                   setLabFilter("all")
                   setCategoryFilter("all")
-                  applyFiltersToUrl({ q: "", lab: "all", category: "all", page: 1 })
+                  setAssetStatusFilter("active")
+                  applyFiltersToUrl({ q: "", lab: "all", category: "all", assetStatus: "active", page: 1 })
                 }}
               >
                 Reset
@@ -469,19 +485,21 @@ export function ToolsPageClient({
                           <Eye className="size-4" />
                         </Button>
                         <Button variant="ghost" size="icon" className="size-8" onClick={() => setShowQr(tool)}><QrCode className="size-4" /></Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="size-8"
-                          onClick={() => {
-                            setEditLabId(tool.labId)
-                            setEditStatus(tool.status)
-                            setEditCond(tool.condition)
-                            setEditing(tool)
-                          }}
-                        >
-                          <Pencil className="size-4" />
-                        </Button>
+                        {tool.status !== "inactive" && (
+                          <Button
+                            variant="ghost"
+                            size="icon"
+                            className="size-8"
+                            onClick={() => {
+                              setEditLabId(tool.labId)
+                              setEditStatus(tool.status)
+                              setEditCond(tool.condition)
+                              setEditing(tool)
+                            }}
+                          >
+                            <Pencil className="size-4" />
+                          </Button>
+                        )}
                       </div>
                     </TableCell>
                   </TableRow>
@@ -645,6 +663,17 @@ export function ToolsPageClient({
                         <p className="text-muted-foreground">Deskripsi Model</p>
                         <p className="text-foreground">{showDetail.description ?? "-"}</p>
                       </div>
+                      {(showDetail.status === "inactive" || showDetail.retirementReason) && (
+                        <div className="sm:col-span-2 rounded-lg border border-destructive/20 bg-destructive/5 px-3 py-2">
+                          <p className="text-muted-foreground">Arsip Layanan</p>
+                          <p className="text-foreground">
+                            {showDetail.retirementReason ?? "Unit diarsipkan dari layanan."}
+                          </p>
+                          {showDetail.retiredAt && (
+                            <p className="mt-1 text-xs text-muted-foreground">Tanggal arsip: {dt(showDetail.retiredAt)}</p>
+                          )}
+                        </div>
+                      )}
                   </div>
                   <div className="mt-4 flex items-center justify-between gap-3 rounded-lg border border-border/50 bg-background px-3 py-2">
                     <p className="text-xs text-muted-foreground">Gunakan tombol ini untuk mencetak label QR identifikasi unit.</p>
@@ -685,7 +714,7 @@ export function ToolsPageClient({
 
               <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
                 <Button variant="outline" onClick={() => setShowDetail(null)}>Tutup</Button>
-                {canManage && (
+                {canManage && showDetail.status !== "inactive" && (
                   <Button
                     onClick={() => {
                       setEditLabId(showDetail.labId)
@@ -793,7 +822,7 @@ export function ToolsPageClient({
                     <Label>Status</Label>
                     <Select name="status" value={editStatus} onValueChange={(v) => setEditStatus(v as ToolRow["status"])}>
                       <SelectTrigger className="w-full"><SelectValue /></SelectTrigger>
-                      <SelectContent>{["available","borrowed","maintenance","damaged","inactive"].map((s) => <SelectItem key={s} value={s}>{statusConfig[s as ToolRow["status"]].label}</SelectItem>)}</SelectContent>
+                      <SelectContent>{["available","borrowed","maintenance","damaged"].map((s) => <SelectItem key={s} value={s}>{statusConfig[s as ToolRow["status"]].label}</SelectItem>)}</SelectContent>
                     </Select>
                   </div>
                   <div className="grid gap-2">
@@ -823,7 +852,7 @@ export function ToolsPageClient({
                 <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
                   <Button type="button" variant="ghost" className="justify-start text-destructive hover:text-destructive" onClick={() => setDeactivating(editing)}>
                     <Trash2 className="size-4" />
-                    Nonaktifkan Unit
+                    Arsipkan / Hapus dari Layanan
                   </Button>
                   <div className="flex flex-col-reverse gap-2 sm:flex-row">
                     <Button type="button" variant="outline" onClick={() => setEditing(null)}>Tutup</Button>
@@ -838,16 +867,29 @@ export function ToolsPageClient({
 
       <Dialog open={!!deactivating} onOpenChange={(o) => !o && setDeactivating(null)}>
         <DialogContent className="max-w-md max-h-[90vh] overflow-y-auto border-border/60 bg-card/95 shadow-xl">
-          <DialogHeader><DialogTitle>Nonaktifkan Unit Alat</DialogTitle><DialogDescription>Unit akan disembunyikan dari listing aktif.</DialogDescription></DialogHeader>
+          <DialogHeader>
+            <DialogTitle>Arsipkan / Hapus dari Layanan</DialogTitle>
+            <DialogDescription>Unit tidak akan tersedia untuk peminjaman baru, tetapi histori tetap disimpan.</DialogDescription>
+          </DialogHeader>
           <form action={deactivateAction} className="grid gap-3">
             {deactivateState && <p className={`rounded border px-3 py-2 text-sm ${deactivateState.ok ? "border-success/20 bg-success/5" : "border-destructive/20 bg-destructive/5"}`}>{deactivateState.message}</p>}
             <input type="hidden" name="assetId" value={deactivating?.assetId ?? ""} />
             <div className="rounded-lg border border-border/50 bg-muted/10 px-3 py-2 text-sm text-muted-foreground">
-              Proteksi aktif: unit tidak bisa dinonaktifkan jika sedang dipinjam atau sudah pernah direferensikan transaksi.
+              Proteksi aktif: unit tidak bisa diarsipkan jika sedang dipinjam atau masih ada di transaksi terbuka.
+            </div>
+            <div className="grid gap-2">
+              <Label htmlFor="retirementReason">Alasan</Label>
+              <Textarea
+                id="retirementReason"
+                name="retirementReason"
+                placeholder="Rusak / Dihibahkan/ Penghapusan Barang Negara"
+                maxLength={500}
+                required
+              />
             </div>
             <div className="flex flex-col-reverse gap-2 sm:flex-row sm:justify-end">
               <Button type="button" variant="outline" onClick={() => setDeactivating(null)}>Batal</Button>
-              <Button type="submit" variant="destructive" disabled={deactivatePending || !deactivating}>{deactivatePending ? "Memproses..." : "Nonaktifkan"}</Button>
+              <Button type="submit" variant="destructive" disabled={deactivatePending || !deactivating}>{deactivatePending ? "Memproses..." : "Arsipkan Unit"}</Button>
             </div>
           </form>
         </DialogContent>

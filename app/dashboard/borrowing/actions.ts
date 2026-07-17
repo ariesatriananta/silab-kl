@@ -116,6 +116,11 @@ const approvalActionSchema = z.object({
   note: z.string().max(500).optional(),
 })
 
+const editBorrowingRequestSchema = createBorrowingRequestSchema.omit({ requesterUserId: true }).extend({
+  transactionId: z.string().uuid(),
+  editReason: z.string().trim().min(5, "Alasan revisi minimal 5 karakter.").max(500),
+})
+
 const handoverActionSchema = z.object({
   transactionId: z.string().uuid(),
   dueDate: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, "Tanggal jatuh tempo wajib diisi"),
@@ -500,6 +505,7 @@ async function validateApprovalActorAndTransaction(transactionId: string) {
       status: true,
       step1ApproverUserId: true,
       approvalMatrixId: true,
+      approvalRound: true,
     },
   })
 
@@ -542,7 +548,13 @@ async function validateApprovalActorAndTransaction(transactionId: string) {
     })
     .from(borrowingApprovals)
     .innerJoin(users, eq(users.id, borrowingApprovals.approverUserId))
-    .where(and(eq(borrowingApprovals.transactionId, txRow.id), eq(borrowingApprovals.decision, "approved")))
+    .where(
+      and(
+        eq(borrowingApprovals.transactionId, txRow.id),
+        eq(borrowingApprovals.approvalRound, txRow.approvalRound),
+        eq(borrowingApprovals.decision, "approved"),
+      ),
+    )
 
   const approvedStepSet = new Set(approvedRows.map((r) => r.stepOrder))
   const nextStepOrder = BORROWING_APPROVAL_FLOW.find((stepOrder) => !approvedStepSet.has(stepOrder))
@@ -586,6 +598,271 @@ export async function rejectBorrowingAction(formData: FormData) {
   await rejectBorrowingWithFeedbackAction(null, formData)
 }
 
+export async function editBorrowingRequestWithFeedbackAction(
+  _prevState: BorrowingMutationResult | null,
+  formData: FormData,
+): Promise<BorrowingMutationResult> {
+  const parsed = editBorrowingRequestSchema.safeParse({
+    transactionId: formData.get("transactionId"),
+    labId: formData.get("labId"),
+    purpose: formData.get("purpose"),
+    studyProgram: formData.get("studyProgram"),
+    courseName: formData.get("courseName"),
+    materialTopic: formData.get("materialTopic"),
+    semesterLabel: formData.get("semesterLabel"),
+    groupName: formData.get("groupName"),
+    plannedBorrowAt: formData.get("plannedBorrowAt"),
+    plannedReturnAt: formData.get("plannedReturnAt"),
+    advisorApproverUserId: formData.get("advisorApproverUserId"),
+    itemsPayload: formData.get("itemsPayload")?.toString() || undefined,
+    editReason: formData.get("editReason"),
+  })
+
+  if (!parsed.success) {
+    const issue = parsed.error.issues[0]
+    return { ok: false, message: issue ? mapCreateBorrowingIssueMessage(issue) : "Data revisi tidak valid." }
+  }
+
+  const validated = await validateApprovalActorAndTransaction(parsed.data.transactionId)
+  if ("error" in validated) return { ok: false, message: validated.error ?? "Revisi tidak dapat diproses." }
+
+  const { session, txRow } = validated
+  const labId = parsed.data.labId
+  let toolAssetIds: string[] = []
+  let consumableSelections: Array<{ consumableItemId: string; qty: number }> = []
+
+  try {
+    const raw = parsed.data.itemsPayload ? (JSON.parse(parsed.data.itemsPayload) as unknown) : {}
+    const parsedItems = itemsPayloadSchema.parse(raw)
+    toolAssetIds = Array.from(new Set(parsedItems.toolAssetIds))
+    consumableSelections = parsedItems.consumables
+      .filter((c) => c.qty > 0)
+      .map((c) => ({ consumableItemId: c.consumableItemId, qty: c.qty }))
+  } catch {
+    return { ok: false, message: "Data item revisi tidak valid." }
+  }
+
+  if (toolAssetIds.length === 0 && consumableSelections.length === 0) {
+    return { ok: false, message: "Pilih minimal satu item (alat atau bahan)." }
+  }
+  if (consumableSelections.some((c) => c.qty < 1)) {
+    return { ok: false, message: "Qty bahan harus minimal 1." }
+  }
+
+  let plannedBorrowAt: Date
+  let plannedReturnAt: Date
+  try {
+    plannedBorrowAt = parseDateTimeLocalWib(parsed.data.plannedBorrowAt)
+    plannedReturnAt = parseDateTimeLocalWib(parsed.data.plannedReturnAt)
+  } catch (error) {
+    return {
+      ok: false,
+      message: error instanceof Error ? error.message : "Format waktu rencana tidak valid.",
+    }
+  }
+
+  if (plannedReturnAt.getTime() <= plannedBorrowAt.getTime()) {
+    return { ok: false, message: "Waktu rencana kembali harus lebih besar dari waktu rencana pakai." }
+  }
+
+  const [
+    labExists,
+    actorNewLabAssignment,
+    matrixConfig,
+    selectedAdvisorApprover,
+    plpAssignment,
+    toolAssetRows,
+    consumableRows,
+    currentToolAssetRows,
+  ] = await Promise.all([
+      db.query.labs.findFirst({
+        where: and(eq(labs.id, labId), eq(labs.isActive, true)),
+        columns: { id: true },
+      }),
+      session.user.role !== "admin"
+        ? db.query.userLabAssignments.findFirst({
+            where: and(eq(userLabAssignments.userId, session.user.id), eq(userLabAssignments.labId, labId)),
+            columns: { labId: true },
+          })
+        : Promise.resolve(null),
+      getActiveBorrowingMatrixForLab(labId),
+      db
+        .select({
+          id: users.id,
+          fullName: users.fullName,
+        })
+        .from(userLabAssignments)
+        .innerJoin(users, eq(users.id, userLabAssignments.userId))
+        .where(
+          and(
+            eq(userLabAssignments.labId, labId),
+            eq(users.id, parsed.data.advisorApproverUserId),
+            eq(users.role, "dosen"),
+            eq(users.isActive, true),
+          ),
+        )
+        .then((rows) => rows[0] ?? null),
+      db
+        .select({ userId: userLabAssignments.userId })
+        .from(userLabAssignments)
+        .innerJoin(users, eq(users.id, userLabAssignments.userId))
+        .where(and(eq(userLabAssignments.labId, labId), eq(users.role, "petugas_plp"), eq(users.isActive, true)))
+        .limit(1)
+        .then((rows) => rows[0] ?? null),
+      toolAssetIds.length > 0
+        ? db
+            .select({
+              id: toolAssets.id,
+              status: toolAssets.status,
+              toolModelLabId: toolModels.labId,
+            })
+            .from(toolAssets)
+            .innerJoin(toolModels, eq(toolAssets.toolModelId, toolModels.id))
+            .where(inArray(toolAssets.id, toolAssetIds))
+        : Promise.resolve([]),
+      consumableSelections.length > 0
+        ? db
+            .select({
+              id: consumableItems.id,
+              labId: consumableItems.labId,
+            })
+            .from(consumableItems)
+            .where(inArray(consumableItems.id, consumableSelections.map((c) => c.consumableItemId)))
+        : Promise.resolve([]),
+      db
+        .select({
+          toolAssetId: borrowingTransactionItems.toolAssetId,
+        })
+        .from(borrowingTransactionItems)
+        .where(
+          and(
+            eq(borrowingTransactionItems.transactionId, txRow.id),
+            eq(borrowingTransactionItems.itemType, "tool_asset"),
+          ),
+        ),
+    ])
+
+  if (!labExists) return { ok: false, message: "Lab tidak ditemukan atau nonaktif." }
+  if (session.user.role !== "admin" && !actorNewLabAssignment) {
+    return { ok: false, message: "Anda tidak memiliki akses ke lab tujuan revisi." }
+  }
+  if (!matrixConfig) return { ok: false, message: "Matrix approval lab belum aktif atau belum valid. Hubungi admin." }
+  if (!selectedAdvisorApprover) {
+    return { ok: false, message: "Dosen yang dipilih tidak valid atau tidak ter-assign pada lab ini." }
+  }
+  if (!plpAssignment) {
+    return { ok: false, message: "Lab belum memiliki Petugas PLP aktif ter-assign untuk approval tahap 2." }
+  }
+  if (toolAssetRows.length !== toolAssetIds.length) {
+    return { ok: false, message: "Sebagian alat tidak ditemukan." }
+  }
+  if (toolAssetRows.some((tool) => tool.toolModelLabId !== labId)) {
+    return { ok: false, message: "Semua alat harus berasal dari lab yang sama dengan transaksi." }
+  }
+  const currentToolAssetIdSet = new Set(
+    currentToolAssetRows.map((row) => row.toolAssetId).filter((id): id is string => Boolean(id)),
+  )
+  if (toolAssetRows.some((tool) => tool.status !== "available" && !currentToolAssetIdSet.has(tool.id))) {
+    return { ok: false, message: "Ada alat baru yang tidak tersedia." }
+  }
+  if (consumableRows.length !== consumableSelections.length) {
+    return { ok: false, message: "Sebagian bahan habis pakai tidak ditemukan." }
+  }
+  if (consumableRows.some((item) => item.labId !== labId)) {
+    return { ok: false, message: "Semua bahan harus berasal dari lab yang sama dengan transaksi." }
+  }
+
+  try {
+    await runBorrowingTx(async (tx) => {
+      const nextApprovalRound = txRow.approvalRound + 1
+
+      await tx
+        .update(borrowingTransactions)
+        .set({
+          labId,
+          approvalMatrixId: matrixConfig.id,
+          approvalRound: nextApprovalRound,
+          step1ApproverUserId: selectedAdvisorApprover.id,
+          purpose: parsed.data.purpose.trim(),
+          studyProgram: parsed.data.studyProgram.trim(),
+          courseName: parsed.data.courseName.trim(),
+          materialTopic: parsed.data.materialTopic.trim(),
+          semesterLabel: parsed.data.semesterLabel.trim(),
+          groupName: parsed.data.groupName.trim(),
+          plannedBorrowAt,
+          plannedReturnAt,
+          advisorLecturerName: selectedAdvisorApprover.fullName,
+          status: "pending_approval",
+          approvedAt: null,
+          rejectionReason: null,
+          updatedAt: new Date(),
+        })
+        .where(eq(borrowingTransactions.id, txRow.id))
+
+      await tx.delete(borrowingTransactionItems).where(eq(borrowingTransactionItems.transactionId, txRow.id))
+
+      if (toolAssetIds.length > 0) {
+        await tx.insert(borrowingTransactionItems).values(
+          toolAssetIds.map((toolAssetId) => ({
+            transactionId: txRow.id,
+            itemType: "tool_asset" as const,
+            toolAssetId,
+            qtyRequested: 1,
+          })),
+        )
+      }
+
+      if (consumableSelections.length > 0) {
+        await tx.insert(borrowingTransactionItems).values(
+          consumableSelections.map((item) => ({
+            transactionId: txRow.id,
+            itemType: "consumable" as const,
+            consumableItemId: item.consumableItemId,
+            qtyRequested: item.qty,
+          })),
+        )
+      }
+    })
+  } catch (error) {
+    console.error("editBorrowingRequestAction error:", error)
+    await writeSecurityAuditLog({
+      category: "borrowing",
+      action: "edit_pending_request",
+      outcome: "failure",
+      userId: session.user.id,
+      actorRole: session.user.role,
+      targetType: "borrowing_transaction",
+      targetId: txRow.id,
+      metadata: { message: error instanceof Error ? error.message : "unknown_error" },
+    })
+    return { ok: false, message: "Revisi pengajuan gagal disimpan." }
+  }
+
+  await writeSecurityAuditLog({
+    category: "borrowing",
+    action: "edit_pending_request",
+    outcome: "success",
+    userId: session.user.id,
+    actorRole: session.user.role,
+    targetType: "borrowing_transaction",
+    targetId: txRow.id,
+    metadata: {
+      previousLabId: txRow.labId,
+      newLabId: labId,
+      previousApprovalRound: txRow.approvalRound,
+      newApprovalRound: txRow.approvalRound + 1,
+      editReason: parsed.data.editReason,
+      toolCount: toolAssetIds.length,
+      consumableCount: consumableSelections.length,
+    },
+  })
+
+  revalidatePath("/dashboard/borrowing")
+  revalidatePath("/dashboard")
+
+  return { ok: true, message: "Revisi pengajuan disimpan. Approval dikembalikan ke tahap 1." }
+}
+
 export async function approveBorrowingWithFeedbackAction(
   _prevState: BorrowingMutationResult | null,
   formData: FormData,
@@ -622,6 +899,7 @@ export async function approveBorrowingWithFeedbackAction(
         approverUserId: session.user.id,
         decision: "approved",
         stepOrder: nextStepOrder,
+        approvalRound: txRow.approvalRound,
         note: approvalNote,
       })
 
@@ -631,6 +909,7 @@ export async function approveBorrowingWithFeedbackAction(
         .where(
           and(
             eq(borrowingApprovals.transactionId, txRow.id),
+            eq(borrowingApprovals.approvalRound, txRow.approvalRound),
             eq(borrowingApprovals.decision, "approved"),
           ),
         )
@@ -719,6 +998,7 @@ export async function rejectBorrowingWithFeedbackAction(
         approverUserId: session.user.id,
         decision: "rejected",
         stepOrder: nextStepOrder,
+        approvalRound: txRow.approvalRound,
         note: rejectionNote,
       })
 
@@ -799,6 +1079,7 @@ export async function handoverBorrowingAction(
       id: true,
       labId: true,
       status: true,
+      approvalRound: true,
     },
   })
   if (!txRow) return { ok: false, message: "Transaksi tidak ditemukan." }
@@ -827,6 +1108,7 @@ export async function handoverBorrowingAction(
         .where(
           and(
             eq(borrowingApprovals.transactionId, txRow.id),
+            eq(borrowingApprovals.approvalRound, txRow.approvalRound),
             eq(borrowingApprovals.decision, "approved"),
           ),
         )

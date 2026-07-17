@@ -47,6 +47,22 @@ function fmtDateTime(date: Date | null) {
   }).format(date)
 }
 
+function fmtDateTimeLocalInput(date: Date | null) {
+  if (!isValidDateValue(date)) return ""
+  const parts = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hour12: false,
+    hourCycle: "h23",
+  }).formatToParts(date)
+  const byType = new Map(parts.map((part) => [part.type, part.value]))
+  return `${byType.get("year")}-${byType.get("month")}-${byType.get("day")}T${byType.get("hour")}:${byType.get("minute")}`
+}
+
 function getDisplayBorrowAt(input: {
   status: ReturnType<typeof mapBorrowingDisplayStatus>
   plannedBorrowAt: Date | null
@@ -180,6 +196,7 @@ export async function GET(request: Request) {
       advisorLecturerName: borrowingTransactions.advisorLecturerName,
       step1ApproverUserId: borrowingTransactions.step1ApproverUserId,
       approvalMatrixId: borrowingTransactions.approvalMatrixId,
+      approvalRound: borrowingTransactions.approvalRound,
       status: borrowingTransactions.status,
       requesterName: users.fullName,
       requesterNim: users.nim,
@@ -209,6 +226,7 @@ export async function GET(request: Request) {
           itemType: borrowingTransactionItems.itemType,
           qty: borrowingTransactionItems.qtyRequested,
           toolAssetId: borrowingTransactionItems.toolAssetId,
+          consumableItemId: borrowingTransactionItems.consumableItemId,
           toolName: toolModels.name,
           assetCode: toolAssets.assetCode,
           consumableName: consumableItems.name,
@@ -222,12 +240,19 @@ export async function GET(request: Request) {
       db
         .select({ count: sql<number>`count(*)` })
         .from(borrowingApprovals)
-        .where(and(eq(borrowingApprovals.transactionId, row.id), eq(borrowingApprovals.decision, "approved"))),
+        .where(
+          and(
+            eq(borrowingApprovals.transactionId, row.id),
+            eq(borrowingApprovals.approvalRound, row.approvalRound),
+            eq(borrowingApprovals.decision, "approved"),
+          ),
+        ),
       db
         .select({
           decision: borrowingApprovals.decision,
           decidedAt: borrowingApprovals.decidedAt,
           note: borrowingApprovals.note,
+          approvalRound: borrowingApprovals.approvalRound,
           approverName: users.fullName,
           approverRole: users.role,
         })
@@ -304,6 +329,7 @@ export async function GET(request: Request) {
     name: item.itemType === "tool_asset" ? (item.toolName ?? "Alat") : (item.consumableName ?? "Bahan"),
     qty: item.qty,
     toolAssetId: item.toolAssetId,
+    consumableItemId: item.consumableItemId,
     assetCode: item.assetCode,
     unit: item.consumableUnit,
     returned: returnedItemIdSet.has(item.id),
@@ -389,6 +415,10 @@ export async function GET(request: Request) {
       semesterLabel: row.semesterLabel,
       groupName: row.groupName,
       advisorLecturerName: row.advisorLecturerName,
+      labId: row.labId,
+      plannedBorrowAtInput: fmtDateTimeLocalInput(row.plannedBorrowAt),
+      plannedReturnAtInput: fmtDateTimeLocalInput(row.plannedReturnAt),
+      step1ApproverUserId: row.step1ApproverUserId,
       requestedAt: fmtDate(row.requestedAt) ?? "-",
       borrowDate: fmtDateTime(displayBorrowAt),
       dueDate: fmtDateTime(displayReturnAt),
@@ -404,6 +434,7 @@ export async function GET(request: Request) {
         approverName: a.approverName,
         approverRole: a.approverRole,
         decision: a.decision,
+        approvalRound: a.approvalRound,
         decidedAt: fmtDateTime(a.decidedAt) ?? "-",
         note: a.note,
       })),

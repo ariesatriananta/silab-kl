@@ -1,12 +1,13 @@
 "use server"
 
 import { revalidatePath } from "next/cache"
-import { and, eq } from "drizzle-orm"
+import { and, eq, inArray } from "drizzle-orm"
 import { z } from "zod"
 
 import { getServerAuthSession } from "@/lib/auth/server"
 import { db } from "@/lib/db/client"
 import {
+  borrowingTransactions,
   borrowingTransactionItems,
   toolAssetEvents,
   toolAssets,
@@ -51,6 +52,7 @@ const updateToolSchema = z.object({
 
 const deactivateToolSchema = z.object({
   assetId: z.string().uuid(),
+  retirementReason: z.string().trim().min(3, "Alasan arsip wajib diisi.").max(500),
 })
 
 async function getActor() {
@@ -253,6 +255,12 @@ export async function updateToolAssetAction(
   const current = existing[0]
   if (!current) return { ok: false, message: "Alat tidak ditemukan." }
   if (current.modelId !== parsed.data.modelId) return { ok: false, message: "Data alat tidak konsisten." }
+  if (parsed.data.status === "inactive") {
+    return {
+      ok: false,
+      message: "Gunakan menu Arsipkan / Hapus dari Layanan agar alasan penghapusan tercatat.",
+    }
+  }
 
   const oldLabAccess = await ensureLabAccess(session.user.role, session.user.id, current.currentLabId)
   if (!oldLabAccess.ok) return { ok: false, message: oldLabAccess.message }
@@ -346,8 +354,9 @@ export async function deactivateToolAssetAction(
 ): Promise<ToolMasterActionResult> {
   const parsed = deactivateToolSchema.safeParse({
     assetId: formData.get("assetId"),
+    retirementReason: formData.get("retirementReason"),
   })
-  if (!parsed.success) return { ok: false, message: "Data nonaktif alat tidak valid." }
+  if (!parsed.success) return { ok: false, message: parsed.error.issues[0]?.message ?? "Data arsip alat tidak valid." }
 
   const actor = await getActor()
   if ("error" in actor) return { ok: false, message: actor.error ?? "Sesi tidak valid." }
@@ -373,26 +382,44 @@ export async function deactivateToolAssetAction(
   const access = await ensureLabAccess(session.user.role, session.user.id, existing.labId)
   if (!access.ok) return { ok: false, message: access.message }
   if (!existing.isActive || existing.status === "inactive") return { ok: false, message: "Unit alat sudah nonaktif." }
-  if (existing.status === "borrowed") return { ok: false, message: "Unit alat sedang dipinjam dan tidak dapat dinonaktifkan." }
+  if (existing.status === "borrowed") return { ok: false, message: "Unit alat sedang dipinjam dan tidak dapat diarsipkan." }
 
-  const ref = await db.query.borrowingTransactionItems.findFirst({
-    where: eq(borrowingTransactionItems.toolAssetId, existing.assetId),
-    columns: { id: true },
-  })
-  if (ref) {
+  const openRefRows = await db
+    .select({ id: borrowingTransactionItems.id })
+    .from(borrowingTransactionItems)
+    .innerJoin(borrowingTransactions, eq(borrowingTransactions.id, borrowingTransactionItems.transactionId))
+    .where(
+      and(
+        eq(borrowingTransactionItems.toolAssetId, existing.assetId),
+        inArray(borrowingTransactions.status, [
+          "submitted",
+          "pending_approval",
+          "approved_waiting_handover",
+          "active",
+          "partially_returned",
+        ]),
+      ),
+    )
+    .limit(1)
+  if (openRefRows.length > 0) {
     return {
       ok: false,
-      message: "Unit alat tidak dapat dinonaktifkan karena sudah direferensikan transaksi. Gunakan status maintenance/damaged bila perlu.",
+      message: "Unit alat masih ada di transaksi terbuka. Selesaikan/batalkan transaksi dulu sebelum diarsipkan.",
     }
   }
 
+  const reason = parsed.data.retirementReason.trim()
+  const now = new Date()
   await runToolDbUnit(async (tx) => {
     await tx
       .update(toolAssets)
       .set({
         status: "inactive",
         isActive: false,
-        updatedAt: new Date(),
+        retiredAt: now,
+        retiredByUserId: session.user.id,
+        retirementReason: reason,
+        updatedAt: now,
       })
       .where(eq(toolAssets.id, existing.assetId))
 
@@ -401,7 +428,7 @@ export async function deactivateToolAssetAction(
       eventType: "status_update",
       statusBefore: existing.status,
       statusAfter: "inactive",
-      note: "Unit alat dinonaktifkan.",
+      note: `Arsipkan / Hapus dari Layanan: ${reason}`,
       actorUserId: session.user.id,
     })
   })
@@ -414,11 +441,11 @@ export async function deactivateToolAssetAction(
     actorRole: session.user.role,
     targetType: "tool_asset",
     targetId: existing.assetId,
-    metadata: { assetCode: existing.assetCode },
+    metadata: { assetCode: existing.assetCode, retirementReason: reason },
   })
 
   revalidatePath("/dashboard/tools")
   revalidatePath("/dashboard/student-tools")
   revalidatePath("/dashboard/dashboard")
-  return { ok: true, message: `Unit ${existing.assetCode} berhasil dinonaktifkan.` }
+  return { ok: true, message: `Unit ${existing.assetCode} berhasil diarsipkan dari layanan.` }
 }

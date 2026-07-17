@@ -28,6 +28,7 @@ type ToolsFilters = {
   q: string
   lab: string
   category: string
+  assetStatus: "active" | "inactive" | "all"
   page: number
   pageSize: number
 }
@@ -73,12 +74,19 @@ async function getToolsData(
     : undefined
   const selectedLabCondition = normalizedLabFilter !== "all" ? eq(toolModels.labId, normalizedLabFilter) : undefined
   const selectedCategoryCondition = filters.category !== "all" ? eq(toolModels.category, filters.category) : undefined
+  const selectedAssetStatusCondition =
+    filters.assetStatus === "active"
+      ? and(eq(toolAssets.isActive, true), sql`${toolAssets.status} <> 'inactive'`)
+      : filters.assetStatus === "inactive"
+        ? or(eq(toolAssets.isActive, false), eq(toolAssets.status, "inactive"))
+        : undefined
 
   const filteredToolsWhere = and(
     eq(toolModels.isActive, true),
     baseToolsWhere,
     selectedLabCondition,
     selectedCategoryCondition,
+    selectedAssetStatusCondition,
     searchConditions,
   )
 
@@ -96,6 +104,8 @@ async function getToolsData(
         condition: toolAssets.condition,
         assetNotes: toolAssets.notes,
         isActive: toolAssets.isActive,
+        retiredAt: toolAssets.retiredAt,
+        retirementReason: toolAssets.retirementReason,
         modelCode: toolModels.code,
         modelName: toolModels.name,
         brand: toolModels.brand,
@@ -175,6 +185,8 @@ async function getToolsData(
     condition: row.condition,
     assetNotes: row.assetNotes,
     isActive: row.isActive,
+    retiredAt: row.retiredAt?.toISOString() ?? null,
+    retirementReason: row.retirementReason,
     modelCode: row.modelCode,
     name: row.modelName,
     brand: row.brand,
@@ -229,6 +241,7 @@ async function getToolsData(
       q: filters.q,
       lab: normalizedLabFilter,
       category: filters.category,
+      assetStatus: filters.assetStatus,
     },
   }
 }
@@ -256,6 +269,9 @@ export default async function ToolsPage({
     q: (getSingle("q") ?? "").trim(),
     lab: getSingle("lab") ?? "all",
     category: getSingle("category") ?? "all",
+    assetStatus: ["active", "inactive", "all"].includes(getSingle("assetStatus") ?? "")
+      ? (getSingle("assetStatus") as ToolsFilters["assetStatus"])
+      : "active",
     page: Number.isFinite(pageNum) && pageNum > 0 ? pageNum : 1,
     pageSize: 20,
   }

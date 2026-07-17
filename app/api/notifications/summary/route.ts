@@ -165,12 +165,14 @@ function pendingApprovalCountSql(actorUserId: string, step: 1 | 2) {
           select 1
           from borrowing_approvals ba_self
           where ba_self.transaction_id = bt.id
+            and ba_self.approval_round = bt.approval_round
             and ba_self.approver_user_id = ${actorUserId}
         )
         and (
           select count(*)
           from borrowing_approvals ba_ok
           where ba_ok.transaction_id = bt.id
+            and ba_ok.approval_round = bt.approval_round
             and ba_ok.decision = 'approved'
         ) = ${step === 1 ? 0 : 1}
     )
@@ -212,12 +214,14 @@ export async function GET() {
           select 1
           from borrowing_approvals ba_self
           where ba_self.transaction_id = ${borrowingTransactions.id}
+            and ba_self.approval_round = ${borrowingTransactions.approvalRound}
             and ba_self.approver_user_id = ${userId}
         )`,
         sql`(
           select count(*)
           from borrowing_approvals ba_ok
           where ba_ok.transaction_id = ${borrowingTransactions.id}
+            and ba_ok.approval_round = ${borrowingTransactions.approvalRound}
             and ba_ok.decision = 'approved'
         ) = 0`,
         sql`exists (
@@ -273,12 +277,14 @@ export async function GET() {
               select 1
               from borrowing_approvals ba_self
               where ba_self.transaction_id = ${borrowingTransactions.id}
+                and ba_self.approval_round = ${borrowingTransactions.approvalRound}
                 and ba_self.approver_user_id = ${userId}
             )`,
             sql`(
               select count(*)
               from borrowing_approvals ba_ok
               where ba_ok.transaction_id = ${borrowingTransactions.id}
+                and ba_ok.approval_round = ${borrowingTransactions.approvalRound}
                 and ba_ok.decision = 'approved'
             ) = 1`,
             sql`exists (

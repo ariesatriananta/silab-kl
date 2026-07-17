@@ -14,10 +14,6 @@ export async function GET(request: Request) {
   }
 
   const role = session.user.role as Role
-  if (role === "dosen") {
-    return NextResponse.json({ message: "Dosen tidak dapat membuat pengajuan peminjaman." }, { status: 403 })
-  }
-
   const { searchParams } = new URL(request.url)
   const labId = searchParams.get("labId")
   if (!labId) {
@@ -32,7 +28,7 @@ export async function GET(request: Request) {
     return NextResponse.json({ message: "Lab tidak ditemukan atau nonaktif." }, { status: 404 })
   }
 
-  if (role === "petugas_plp") {
+  if (role === "petugas_plp" || role === "dosen") {
     const assignment = await db.query.userLabAssignments.findFirst({
       where: and(eq(userLabAssignments.userId, session.user.id), eq(userLabAssignments.labId, labId)),
       columns: { labId: true },
@@ -90,4 +86,3 @@ export async function GET(request: Request) {
     })),
   })
 }
-

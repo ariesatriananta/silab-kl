@@ -16,6 +16,7 @@ import {
   Minus,
   Package,
   PackagePlus,
+  Pencil,
   Plus,
   Printer,
   Search,
@@ -26,6 +27,7 @@ import {
 import {
   approveBorrowingWithFeedbackAction,
   createBorrowingRequestAction,
+  editBorrowingRequestWithFeedbackAction,
   handoverBorrowingAction,
   rejectBorrowingWithFeedbackAction,
   returnBorrowingToolAction,
@@ -247,6 +249,7 @@ export type BorrowingListRow = {
   itemCount: number
   toolItemCount: number
   consumableItemCount: number
+  approvalsCount: number
   pendingApprovalLabel: string | null
   pendingApprovalApprovers: string[]
   pendingApprovalTriage: "step1_ready" | "step2_ready" | "blocked_matrix" | "unknown" | null
@@ -312,6 +315,10 @@ export type BorrowingDetail = {
   semesterLabel: string
   groupName: string
   advisorLecturerName: string | null
+  labId: string
+  plannedBorrowAtInput: string
+  plannedReturnAtInput: string
+  step1ApproverUserId: string | null
   requestedAt: string
   borrowDate: string | null
   dueDate: string | null
@@ -328,6 +335,7 @@ export type BorrowingDetail = {
     name: string
     qty: number
     toolAssetId?: string | null
+    consumableItemId?: string | null
     assetCode?: string | null
     unit?: string | null
     returned?: boolean
@@ -336,6 +344,7 @@ export type BorrowingDetail = {
     approverName: string
     approverRole: "admin" | "mahasiswa" | "petugas_plp" | "dosen"
     decision: "approved" | "rejected"
+    approvalRound?: number
     decidedAt: string
     note: string | null
   }>
@@ -449,6 +458,26 @@ export function BorrowingPageClient({
   const [consumableQuery, setConsumableQuery] = useState("")
   const [toolVisibleCount, setToolVisibleCount] = useState(30)
   const [consumableVisibleCount, setConsumableVisibleCount] = useState(30)
+  const [editOpen, setEditOpen] = useState(false)
+  const [editLabId, setEditLabId] = useState("")
+  const [editAdvisorApproverUserId, setEditAdvisorApproverUserId] = useState("")
+  const [editToolIds, setEditToolIds] = useState<string[]>([])
+  const [editConsumableQtyMap, setEditConsumableQtyMap] = useState<Record<string, number>>({})
+  const [editLabTools, setEditLabTools] = useState<BorrowingCreateToolOption[]>([])
+  const [editLabConsumables, setEditLabConsumables] = useState<BorrowingCreateConsumableOption[]>([])
+  const [editInventoryLoading, setEditInventoryLoading] = useState(false)
+  const [editInventoryError, setEditInventoryError] = useState<string | null>(null)
+  const [editToolQuery, setEditToolQuery] = useState("")
+  const [editConsumableQuery, setEditConsumableQuery] = useState("")
+  const [editCourseName, setEditCourseName] = useState("")
+  const [editPurpose, setEditPurpose] = useState<string | undefined>(undefined)
+  const [editStudyProgram, setEditStudyProgram] = useState<string | undefined>(undefined)
+  const [editMaterialTopic, setEditMaterialTopic] = useState("")
+  const [editSemesterLabel, setEditSemesterLabel] = useState("")
+  const [editGroupName, setEditGroupName] = useState("")
+  const [editPlannedBorrowAt, setEditPlannedBorrowAt] = useState("")
+  const [editPlannedReturnAt, setEditPlannedReturnAt] = useState("")
+  const [editReason, setEditReason] = useState("")
   const [courseName, setCourseName] = useState("")
   const [purpose, setPurpose] = useState<string | undefined>(undefined)
   const [studyProgram, setStudyProgram] = useState<string | undefined>(undefined)
@@ -481,6 +510,10 @@ export function BorrowingPageClient({
   const [createState, createAction, createPending] = useActionState(
     createBorrowingRequestAction,
     null as CreateBorrowingActionResult | null,
+  )
+  const [editState, editAction, editPending] = useActionState(
+    editBorrowingRequestWithFeedbackAction,
+    null as BorrowingMutationResult | null,
   )
   const [approveState, approveAction, approvePending] = useActionState(
     approveBorrowingWithFeedbackAction,
@@ -546,6 +579,13 @@ export function BorrowingPageClient({
   }
 
   const selectedBorrowing = selectedBorrowingId ? detailMap[selectedBorrowingId] : null
+  const canCurrentUserEditSelected = Boolean(
+    selectedBorrowing &&
+      selectedBorrowing.status === "pending" &&
+      (role === "admin" ||
+        (role === "dosen" && selectedBorrowing.pendingApprovalTriage === "step1_ready") ||
+        (role === "petugas_plp" && selectedBorrowing.pendingApprovalTriage === "step2_ready")),
+  )
 
   const availableToolsForLab = useMemo(
     () => labTools.filter((item) => item.labId === selectedLabId),
@@ -588,6 +628,64 @@ export function BorrowingPageClient({
         .map((id) => ({ id, item: consumableById.get(id), qty: consumableQtyMap[id] ?? 0 }))
         .filter((entry) => entry.item) as Array<{ id: string; item: BorrowingCreateConsumableOption; qty: number }>,
     [selectedConsumableIds, consumableById, consumableQtyMap],
+  )
+  const editRoute = useMemo(
+    () => createOptions.approvalRoutes.find((route) => route.labId === editLabId) ?? null,
+    [createOptions.approvalRoutes, editLabId],
+  )
+  const editAdvisorApprover = useMemo(
+    () => editRoute?.dosenApprovers.find((item) => item.id === editAdvisorApproverUserId) ?? null,
+    [editRoute, editAdvisorApproverUserId],
+  )
+  const editRouteReady = Boolean(
+    editRoute?.matrixActive && editRoute?.matrixValid && editRoute?.plpApprovers.length && editAdvisorApprover,
+  )
+  const editToolById = useMemo(() => new Map(editLabTools.map((t) => [t.id, t])), [editLabTools])
+  const editConsumableById = useMemo(
+    () => new Map(editLabConsumables.map((c) => [c.id, c])),
+    [editLabConsumables],
+  )
+  const editSelectedTools = useMemo(
+    () => editToolIds.map((id) => editToolById.get(id)).filter(Boolean) as BorrowingCreateToolOption[],
+    [editToolById, editToolIds],
+  )
+  const editSelectedConsumableIds = useMemo(
+    () =>
+      Object.entries(editConsumableQtyMap)
+        .filter(([, qty]) => qty > 0)
+        .map(([id]) => id),
+    [editConsumableQtyMap],
+  )
+  const editSelectedConsumables = useMemo(
+    () =>
+      editSelectedConsumableIds
+        .map((id) => ({ id, item: editConsumableById.get(id), qty: editConsumableQtyMap[id] ?? 0 }))
+        .filter((entry) => entry.item) as Array<{ id: string; item: BorrowingCreateConsumableOption; qty: number }>,
+    [editConsumableById, editConsumableQtyMap, editSelectedConsumableIds],
+  )
+  const editToolSearchResults = useMemo(() => {
+    const q = editToolQuery.trim().toLowerCase()
+    return editLabTools
+      .filter((item) => item.labId === editLabId && !editToolIds.includes(item.id))
+      .filter((item) => (q ? item.label.toLowerCase().includes(q) : true))
+      .slice(0, 30)
+  }, [editLabId, editLabTools, editToolIds, editToolQuery])
+  const editConsumableSearchResults = useMemo(() => {
+    const q = editConsumableQuery.trim().toLowerCase()
+    return editLabConsumables
+      .filter((item) => item.labId === editLabId && !editSelectedConsumableIds.includes(item.id))
+      .filter((item) => (q ? item.label.toLowerCase().includes(q) : true))
+      .slice(0, 30)
+  }, [editConsumableQuery, editLabConsumables, editLabId, editSelectedConsumableIds])
+  const editItemsPayload = useMemo(
+    () =>
+      JSON.stringify({
+        toolAssetIds: editToolIds,
+        consumables: Object.entries(editConsumableQtyMap)
+          .filter(([, qty]) => qty > 0)
+          .map(([consumableItemId, qty]) => ({ consumableItemId, qty })),
+      }),
+    [editConsumableQtyMap, editToolIds],
   )
   const deferredToolQuery = useDeferredValue(toolQuery)
   const deferredConsumableQuery = useDeferredValue(consumableQuery)
@@ -820,6 +918,43 @@ export function BorrowingPageClient({
       return next
     })
   }
+  const handleEditLabChange = (labId: string) => {
+    setEditLabId(labId)
+    const route = createOptions.approvalRoutes.find((item) => item.labId === labId)
+    setEditAdvisorApproverUserId(route?.dosenApprovers[0]?.id ?? "")
+    setEditToolIds([])
+    setEditConsumableQtyMap({})
+    setEditLabTools([])
+    setEditLabConsumables([])
+    setEditInventoryError(null)
+    setEditToolQuery("")
+    setEditConsumableQuery("")
+  }
+  const setEditConsumableQty = (consumableId: string, qty: number) => {
+    setEditConsumableQtyMap((prev) => ({
+      ...prev,
+      [consumableId]: Number.isFinite(qty) && qty > 0 ? Math.floor(qty) : 0,
+    }))
+  }
+  const addEditTool = (toolId: string) => {
+    setEditToolIds((prev) => (prev.includes(toolId) ? prev : [...prev, toolId]))
+  }
+  const removeEditTool = (toolId: string) => {
+    setEditToolIds((prev) => prev.filter((id) => id !== toolId))
+  }
+  const addEditConsumable = (consumableId: string) => {
+    setEditConsumableQtyMap((prev) => ({
+      ...prev,
+      [consumableId]: prev[consumableId] && prev[consumableId] > 0 ? prev[consumableId] : 1,
+    }))
+  }
+  const removeEditConsumable = (consumableId: string) => {
+    setEditConsumableQtyMap((prev) => {
+      const next = { ...prev }
+      delete next[consumableId]
+      return next
+    })
+  }
 
   const openApprovalConfirm = (mode: "approve" | "reject", transactionId: string) => {
     setConfirmDialog({ open: true, mode, transactionId })
@@ -843,6 +978,7 @@ export function BorrowingPageClient({
   useEffect(() => {
     const feedbacks = [
       createState ? { key: `create:${createState.ok}:${createState.message}`, title: "Pengajuan", ...createState } : null,
+      editState ? { key: `edit:${editState.ok}:${editState.message}`, title: "Revisi Pengajuan", ...editState } : null,
       approveState ? { key: `approve:${approveState.ok}:${approveState.message}`, title: "Approval", ...approveState } : null,
       rejectState ? { key: `reject:${rejectState.ok}:${rejectState.message}`, title: "Penolakan", ...rejectState } : null,
       handoverState ? { key: `handover:${handoverState.ok}:${handoverState.message}`, title: "Serah Terima", ...handoverState } : null,
@@ -858,7 +994,7 @@ export function BorrowingPageClient({
         variant: item.ok ? "default" : "destructive",
       })
     }
-  }, [approveState, createState, handoverState, rejectState, returnState, toast])
+  }, [approveState, createState, editState, handoverState, rejectState, returnState, toast])
 
   useEffect(() => {
     if (!createState?.ok) return
@@ -882,6 +1018,112 @@ export function BorrowingPageClient({
       setPlannedReturnTime("08:00")
     })
   }, [createState])
+
+  useEffect(() => {
+    if (!editState?.ok) return
+    queueMicrotask(() => {
+      setEditOpen(false)
+      if (selectedBorrowingId) {
+        setDetailMap((prev) => {
+          const next = { ...prev }
+          delete next[selectedBorrowingId]
+          return next
+        })
+      }
+    })
+  }, [editState, selectedBorrowingId])
+
+  useEffect(() => {
+    if (!editOpen || !selectedBorrowing) return
+    const [borrowDate = "", borrowTime = "08:00"] = selectedBorrowing.plannedBorrowAtInput.split("T")
+    const [returnDate = "", returnTime = "08:00"] = selectedBorrowing.plannedReturnAtInput.split("T")
+    setEditLabId(selectedBorrowing.labId)
+    setEditPurpose(selectedBorrowing.purpose)
+    setEditStudyProgram(selectedBorrowing.studyProgram)
+    setEditCourseName(selectedBorrowing.courseName)
+    setEditMaterialTopic(selectedBorrowing.materialTopic)
+    setEditSemesterLabel(selectedBorrowing.semesterLabel)
+    setEditGroupName(selectedBorrowing.groupName)
+    setEditPlannedBorrowAt(borrowDate ? `${borrowDate}T${borrowTime}` : "")
+    setEditPlannedReturnAt(returnDate ? `${returnDate}T${returnTime}` : "")
+    setEditAdvisorApproverUserId(selectedBorrowing.step1ApproverUserId ?? "")
+    setEditToolIds(
+      selectedBorrowing.items
+        .filter((item) => item.itemType === "tool_asset" && item.toolAssetId)
+        .map((item) => item.toolAssetId!),
+    )
+    setEditConsumableQtyMap(
+      Object.fromEntries(
+        selectedBorrowing.items
+          .filter((item) => item.itemType === "consumable" && item.consumableItemId)
+          .map((item) => [item.consumableItemId!, item.qty]),
+      ),
+    )
+    setEditReason("")
+  }, [editOpen, selectedBorrowing])
+
+  useEffect(() => {
+    if (!editOpen || !editLabId) return
+    const controller = new AbortController()
+    setEditInventoryLoading(true)
+    setEditInventoryError(null)
+
+    fetch(`/api/borrowing/create-inventory?labId=${encodeURIComponent(editLabId)}`, {
+      cache: "no-store",
+      signal: controller.signal,
+    })
+      .then(async (res) => {
+        const payload = (await res.json().catch(() => ({}))) as {
+          tools?: BorrowingCreateToolOption[]
+          consumables?: BorrowingCreateConsumableOption[]
+          message?: string
+        }
+        if (!res.ok) {
+          throw new Error(payload.message || "Gagal memuat data alat dan bahan.")
+        }
+        return {
+          tools: payload.tools ?? [],
+          consumables: payload.consumables ?? [],
+        }
+      })
+      .then((payload) => {
+        const currentTools =
+          selectedBorrowing?.items
+            .filter((item) => item.itemType === "tool_asset" && item.toolAssetId)
+            .map((item) => ({
+              id: item.toolAssetId!,
+              labId: editLabId,
+              modelId: "",
+              modelCode: "",
+              label: `${item.name}${item.assetCode ? ` - ${item.assetCode}` : ""}`,
+            })) ?? []
+        const currentConsumables =
+          selectedBorrowing?.items
+            .filter((item) => item.itemType === "consumable" && item.consumableItemId)
+            .map((item) => ({
+              id: item.consumableItemId!,
+              labId: editLabId,
+              label: `${item.name}${item.unit ? ` (${item.unit})` : ""}`,
+              stockQty: 0,
+              unit: item.unit ?? "",
+            })) ?? []
+        const toolMap = new Map([...currentTools, ...payload.tools].map((item) => [item.id, item]))
+        const consumableMap = new Map([...currentConsumables, ...payload.consumables].map((item) => [item.id, item]))
+        setEditLabTools(Array.from(toolMap.values()))
+        setEditLabConsumables(Array.from(consumableMap.values()))
+      })
+      .catch((error) => {
+        if (controller.signal.aborted) return
+        setEditLabTools([])
+        setEditLabConsumables([])
+        setEditInventoryError(error instanceof Error ? error.message : "Gagal memuat data alat dan bahan.")
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setEditInventoryLoading(false)
+      })
+
+    return () => controller.abort()
+  }, [editLabId, editOpen, selectedBorrowing])
 
   useEffect(() => {
     if (!createOpen || !selectedLabId) return
@@ -2261,6 +2503,319 @@ export function BorrowingPageClient({
                       Hanya tampilkan tindakan yang sesuai dengan status transaksi saat ini.
                     </p>
                   </div>
+
+                  {canCurrentUserEditSelected && (
+                    <Dialog open={editOpen} onOpenChange={setEditOpen}>
+                      <DialogTrigger asChild>
+                        <Button type="button" variant="outline" className="w-full justify-center">
+                          <Pencil className="size-4" />
+                          Edit Pengajuan
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-w-[95vw] md:max-w-[58vw] max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Edit Pengajuan {selectedBorrowing.code}</DialogTitle>
+                          <DialogDescription>
+                            Revisi akan mengembalikan approval transaksi ini ke tahap 1.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <form action={editAction} className="grid gap-4">
+                          <input type="hidden" name="transactionId" value={selectedBorrowing.id} />
+                          <input type="hidden" name="labId" value={editLabId} />
+                          <input type="hidden" name="purpose" value={editPurpose ?? ""} />
+                          <input type="hidden" name="studyProgram" value={editStudyProgram ?? ""} />
+                          <input type="hidden" name="advisorApproverUserId" value={editAdvisorApproverUserId} />
+                          <input type="hidden" name="itemsPayload" value={editItemsPayload} />
+
+                          {editState && (
+                            <div
+                              className={`rounded-xl border px-3 py-2 text-sm ${
+                                editState.ok
+                                  ? "border-success/20 bg-success/5 text-success-foreground"
+                                  : "border-destructive/20 bg-destructive/5 text-destructive"
+                              }`}
+                            >
+                              {editState.message}
+                            </div>
+                          )}
+
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            <div className="grid gap-2">
+                              <Label>Laboratorium</Label>
+                              <Select value={editLabId} onValueChange={handleEditLabChange}>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Pilih lab" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {createOptions.labs.map((lab) => (
+                                    <SelectItem key={lab.id} value={lab.id}>
+                                      {lab.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                              {editInventoryLoading && (
+                                <p className="text-xs text-muted-foreground">Memuat katalog alat dan bahan...</p>
+                              )}
+                              {editInventoryError && <p className="text-xs text-destructive">{editInventoryError}</p>}
+                            </div>
+                            <div className="grid gap-2">
+                              <Label>Dosen Approver Tahap 1</Label>
+                              <Select value={editAdvisorApproverUserId} onValueChange={setEditAdvisorApproverUserId}>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Pilih dosen" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {(editRoute?.dosenApprovers ?? []).map((lecturer) => (
+                                    <SelectItem key={lecturer.id} value={lecturer.id}>
+                                      {lecturer.name}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            <div className="grid gap-2">
+                              <Label>Keperluan</Label>
+                              <Select value={editPurpose} onValueChange={setEditPurpose}>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Pilih keperluan" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {purposeOptions.map((item) => (
+                                    <SelectItem key={item} value={item}>
+                                      {item}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                            <div className="grid gap-2">
+                              <Label>Prodi</Label>
+                              <Select value={editStudyProgram} onValueChange={setEditStudyProgram}>
+                                <SelectTrigger className="w-full">
+                                  <SelectValue placeholder="Pilih prodi" />
+                                </SelectTrigger>
+                                <SelectContent>
+                                  {studyProgramOptions.map((program) => (
+                                    <SelectItem key={program} value={program}>
+                                      {program}
+                                    </SelectItem>
+                                  ))}
+                                </SelectContent>
+                              </Select>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            <div className="grid gap-2">
+                              <Label htmlFor="editCourseName">Mata Kuliah</Label>
+                              <Input
+                                id="editCourseName"
+                                name="courseName"
+                                value={editCourseName}
+                                onChange={(e) => setEditCourseName(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="editMaterialTopic">Materi</Label>
+                              <Input
+                                id="editMaterialTopic"
+                                name="materialTopic"
+                                value={editMaterialTopic}
+                                onChange={(e) => setEditMaterialTopic(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="editSemesterLabel">Semester - Kelas</Label>
+                              <Input
+                                id="editSemesterLabel"
+                                name="semesterLabel"
+                                value={editSemesterLabel}
+                                onChange={(e) => setEditSemesterLabel(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="editGroupName">Kelompok</Label>
+                              <Input
+                                id="editGroupName"
+                                name="groupName"
+                                value={editGroupName}
+                                onChange={(e) => setEditGroupName(e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid gap-3 lg:grid-cols-2">
+                            <div className="grid gap-2">
+                              <Label htmlFor="editPlannedBorrowAt">Waktu Rencana Pakai</Label>
+                              <Input
+                                id="editPlannedBorrowAt"
+                                name="plannedBorrowAt"
+                                type="datetime-local"
+                                value={editPlannedBorrowAt}
+                                onChange={(e) => setEditPlannedBorrowAt(e.target.value)}
+                                required
+                              />
+                            </div>
+                            <div className="grid gap-2">
+                              <Label htmlFor="editPlannedReturnAt">Waktu Rencana Kembali</Label>
+                              <Input
+                                id="editPlannedReturnAt"
+                                name="plannedReturnAt"
+                                type="datetime-local"
+                                value={editPlannedReturnAt}
+                                onChange={(e) => setEditPlannedReturnAt(e.target.value)}
+                                required
+                              />
+                            </div>
+                          </div>
+
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <div className="grid gap-3 rounded-xl border border-border/70 bg-white/90 p-4 dark:bg-muted/20">
+                              <Label className="text-sm font-medium">Katalog Alat</Label>
+                              <Input
+                                value={editToolQuery}
+                                onChange={(e) => setEditToolQuery(e.target.value)}
+                                placeholder="Cari alat..."
+                              />
+                              <div className="max-h-48 space-y-2 overflow-auto rounded-lg border border-border/70 bg-white p-2 dark:bg-card">
+                                {editToolSearchResults.length === 0 && (
+                                  <p className="px-2 py-3 text-sm text-muted-foreground">Tidak ada alat yang cocok.</p>
+                                )}
+                                {editToolSearchResults.map((tool) => (
+                                  <button
+                                    key={tool.id}
+                                    type="button"
+                                    onClick={() => addEditTool(tool.id)}
+                                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-transparent bg-background px-3 py-2 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                                  >
+                                    <span className="text-sm text-foreground">{tool.label}</span>
+                                    <PackagePlus className="size-4 text-primary" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="grid gap-3 rounded-xl border border-border/70 bg-background p-4">
+                              <Label className="text-sm font-medium">Alat Terpilih</Label>
+                              <div className="max-h-48 space-y-2 overflow-auto rounded-lg border border-border/70 bg-muted/10 p-2">
+                                {editSelectedTools.length === 0 && (
+                                  <p className="px-2 py-3 text-sm text-muted-foreground">Belum ada alat dipilih.</p>
+                                )}
+                                {editSelectedTools.map((tool) => (
+                                  <div key={tool.id} className="flex items-center justify-between gap-2 rounded-lg border border-border/60 bg-card px-3 py-2">
+                                    <p className="text-sm text-foreground">{tool.label}</p>
+                                    <Button type="button" size="icon" variant="ghost" className="size-8" onClick={() => removeEditTool(tool.id)}>
+                                      <Trash2 className="size-4" />
+                                    </Button>
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-4 lg:grid-cols-2">
+                            <div className="grid gap-3 rounded-xl border border-border/70 bg-white/90 p-4 dark:bg-muted/20">
+                              <Label className="text-sm font-medium">Katalog Bahan</Label>
+                              <Input
+                                value={editConsumableQuery}
+                                onChange={(e) => setEditConsumableQuery(e.target.value)}
+                                placeholder="Cari bahan..."
+                              />
+                              <div className="max-h-48 space-y-2 overflow-auto rounded-lg border border-border/70 bg-white p-2 dark:bg-card">
+                                {editConsumableSearchResults.length === 0 && (
+                                  <p className="px-2 py-3 text-sm text-muted-foreground">Tidak ada bahan yang cocok.</p>
+                                )}
+                                {editConsumableSearchResults.map((item) => (
+                                  <button
+                                    key={item.id}
+                                    type="button"
+                                    onClick={() => addEditConsumable(item.id)}
+                                    className="flex w-full items-center justify-between gap-3 rounded-lg border border-transparent bg-background px-3 py-2 text-left transition-colors hover:border-primary/30 hover:bg-primary/5"
+                                  >
+                                    <span className="text-sm text-foreground">{item.label}</span>
+                                    <FlaskConical className="size-4 text-primary" />
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+                            <div className="grid gap-3 rounded-xl border border-border/70 bg-background p-4">
+                              <Label className="text-sm font-medium">Bahan Terpilih</Label>
+                              <div className="max-h-48 space-y-2 overflow-auto rounded-lg border border-border/70 bg-muted/10 p-2">
+                                {editSelectedConsumables.length === 0 && (
+                                  <p className="px-2 py-3 text-sm text-muted-foreground">Belum ada bahan dipilih.</p>
+                                )}
+                                {editSelectedConsumables.map(({ id, item, qty }) => (
+                                  <div key={id} className="space-y-2 rounded-lg border border-border/60 bg-card px-3 py-2">
+                                    <div className="flex items-start justify-between gap-3">
+                                      <p className="text-sm text-foreground">{item.label}</p>
+                                      <Button type="button" size="icon" variant="ghost" className="size-8" onClick={() => removeEditConsumable(id)}>
+                                        <Trash2 className="size-4" />
+                                      </Button>
+                                    </div>
+                                    <Input
+                                      type="number"
+                                      min={1}
+                                      value={qty}
+                                      onChange={(e) => setEditConsumableQty(id, Number(e.target.value))}
+                                      className="h-9 w-28"
+                                    />
+                                  </div>
+                                ))}
+                              </div>
+                            </div>
+                          </div>
+
+                          <div className="grid gap-2">
+                            <Label htmlFor="editReason">Alasan Revisi</Label>
+                            <Textarea
+                              id="editReason"
+                              name="editReason"
+                              value={editReason}
+                              onChange={(e) => setEditReason(e.target.value)}
+                              placeholder="Contoh: menyesuaikan jadwal praktikum dan jumlah bahan"
+                              maxLength={500}
+                              required
+                            />
+                          </div>
+
+                          {!editRouteReady && (
+                            <div className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-warning-foreground">
+                              Approval route belum siap. Pastikan lab memiliki dosen tahap 1 dan Petugas PLP aktif.
+                            </div>
+                          )}
+                          {editSelectedTools.length === 0 && editSelectedConsumables.length === 0 && (
+                            <div className="rounded-lg border border-warning/20 bg-warning/5 px-3 py-2 text-xs text-warning-foreground">
+                              Pilih minimal 1 alat atau 1 bahan.
+                            </div>
+                          )}
+
+                          <div className="flex flex-col-reverse gap-2 pt-2 sm:flex-row sm:justify-end">
+                            <Button type="button" variant="outline" onClick={() => setEditOpen(false)} disabled={editPending}>
+                              Batal
+                            </Button>
+                            <Button
+                              type="submit"
+                              disabled={
+                                editPending ||
+                                editInventoryLoading ||
+                                !editRouteReady ||
+                                (editSelectedTools.length === 0 && editSelectedConsumables.length === 0)
+                              }
+                            >
+                              {editPending ? "Menyimpan..." : "Simpan Revisi"}
+                            </Button>
+                          </div>
+                        </form>
+                      </DialogContent>
+                    </Dialog>
+                  )}
 
                   {canCurrentUserApproveSelected && (
                 <>

@@ -160,11 +160,13 @@ export async function getBorrowingReportData(input: {
         sql`not exists (
           select 1 from borrowing_approvals ba_self
           where ba_self.transaction_id = ${borrowingTransactions.id}
+            and ba_self.approval_round = ${borrowingTransactions.approvalRound}
             and ba_self.approver_user_id = ${userId}
         )`,
         sql`(
           select count(*) from borrowing_approvals ba_ok
           where ba_ok.transaction_id = ${borrowingTransactions.id}
+            and ba_ok.approval_round = ${borrowingTransactions.approvalRound}
             and ba_ok.decision = 'approved'
         ) = 1`,
       ),

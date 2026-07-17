@@ -206,12 +206,14 @@ async function getBorrowingData(
                     select 1
                     from borrowing_approvals ba_self
                     where ba_self.transaction_id = ${borrowingTransactions.id}
+                      and ba_self.approval_round = ${borrowingTransactions.approvalRound}
                       and ba_self.approver_user_id = ${userId}
                   )`,
                   sql`(
                     select count(*)
                     from borrowing_approvals ba_ok
                     where ba_ok.transaction_id = ${borrowingTransactions.id}
+                      and ba_ok.approval_round = ${borrowingTransactions.approvalRound}
                       and ba_ok.decision = 'approved'
                   ) = 0`,
                   sql`exists (
@@ -228,12 +230,14 @@ async function getBorrowingData(
                       select 1
                       from borrowing_approvals ba_self
                       where ba_self.transaction_id = ${borrowingTransactions.id}
+                        and ba_self.approval_round = ${borrowingTransactions.approvalRound}
                         and ba_self.approver_user_id = ${userId}
                     )`,
                     sql`(
                       select count(*)
                       from borrowing_approvals ba_ok
                       where ba_ok.transaction_id = ${borrowingTransactions.id}
+                        and ba_ok.approval_round = ${borrowingTransactions.approvalRound}
                         and ba_ok.decision = 'approved'
                     ) = 1`,
                     sql`exists (
@@ -322,12 +326,14 @@ async function getBorrowingData(
             select count(*)
             from borrowing_approvals ba_ok
             where ba_ok.transaction_id = ${borrowingTransactions.id}
+              and ba_ok.approval_round = ${borrowingTransactions.approvalRound}
               and ba_ok.decision = 'approved'
           ) = 0 then 10
           when (
             select count(*)
             from borrowing_approvals ba_ok
             where ba_ok.transaction_id = ${borrowingTransactions.id}
+              and ba_ok.approval_round = ${borrowingTransactions.approvalRound}
               and ba_ok.decision = 'approved'
           ) = 1 then 20
           else 80
@@ -358,6 +364,7 @@ async function getBorrowingData(
       advisorLecturerName: borrowingTransactions.advisorLecturerName,
       step1ApproverUserId: borrowingTransactions.step1ApproverUserId,
       approvalMatrixId: borrowingTransactions.approvalMatrixId,
+      approvalRound: borrowingTransactions.approvalRound,
       status: borrowingTransactions.status,
       requesterName: users.fullName,
       requesterNim: users.nim,
@@ -412,11 +419,12 @@ async function getBorrowingData(
     db
       .select({
         transactionId: borrowingApprovals.transactionId,
+        approvalRound: borrowingApprovals.approvalRound,
         count: sql<number>`count(*)`,
       })
       .from(borrowingApprovals)
-      .where(eq(borrowingApprovals.decision, "approved"))
-      .groupBy(borrowingApprovals.transactionId),
+      .where(and(inArray(borrowingApprovals.transactionId, txIds), eq(borrowingApprovals.decision, "approved")))
+      .groupBy(borrowingApprovals.transactionId, borrowingApprovals.approvalRound),
     db
       .select({
         id: borrowingApprovalMatrices.id,
@@ -484,7 +492,9 @@ async function getBorrowingData(
     }
   }
 
-  const approvalCountByTx = new Map(approvalRows.map((r) => [r.transactionId, Number(r.count)]))
+  const approvalCountByTxRound = new Map(
+    approvalRows.map((r) => [`${r.transactionId}:${r.approvalRound}`, Number(r.count)]),
+  )
   const matrixById = new Map(matrixRowsForTx.map((row) => [row.id, row]))
   const plpAssignedLabSet = new Set(plpAssignedLabRows.map((row) => row.labId))
   const userById = new Map(approverUserRows.map((row) => [row.id, row.fullName]))
@@ -502,8 +512,9 @@ async function getBorrowingData(
       latestReturnedAt: latestReturnedAtByTx.get(row.id) ?? null,
     })
     const matrix = row.approvalMatrixId ? matrixById.get(row.approvalMatrixId) : undefined
+    const approvalCount = approvalCountByTxRound.get(`${row.id}:${row.approvalRound}`) ?? 0
     const requiredApprover = getMatrixRequiredApprover({
-      approvalsCount: approvalCountByTx.get(row.id) ?? 0,
+      approvalsCount: approvalCount,
       transactionStep1ApproverUserId: row.step1ApproverUserId,
       matrixId: row.approvalMatrixId,
       matrixById,
@@ -521,7 +532,7 @@ async function getBorrowingData(
         (!!requiredApprover?.approverUserId && requiredApprover.approverUserId !== userId))
     const pendingApproval = getPendingApprovalInfo({
       status,
-      approvalsCount: approvalCountByTx.get(row.id) ?? 0,
+      approvalsCount: approvalCount,
       matrixId: row.approvalMatrixId,
       step1ApproverName:
         (row.step1ApproverUserId ? userById.get(row.step1ApproverUserId) ?? null : null) ??
@@ -549,6 +560,7 @@ async function getBorrowingData(
       itemCount: itemCountByTx.get(row.id) ?? 0,
       toolItemCount: toolItemCountByTx.get(row.id) ?? 0,
       consumableItemCount: consumableItemCountByTx.get(row.id) ?? 0,
+      approvalsCount: approvalCount,
       pendingApprovalLabel: pendingApproval?.label ?? null,
       pendingApprovalApprovers: pendingApproval?.approvers ?? [],
       pendingApprovalTriage: pendingApproval?.triage ?? null,
@@ -572,14 +584,6 @@ async function getBorrowingData(
 }
 
 async function getCreateOptions(role: Role, userId: string, accessibleLabIds: string[] | null) {
-  if (role === "dosen") {
-    return {
-      labsOptions: [] as BorrowingCreateLabOption[],
-      requesterOptions: [] as BorrowingCreateRequesterOption[],
-      approvalRoutes: [] as BorrowingCreateApprovalRouteOption[],
-    }
-  }
-
   const labScopeWhere =
     role !== "admin" && role !== "mahasiswa" && accessibleLabIds
       ? accessibleLabIds.length > 0
@@ -593,7 +597,9 @@ async function getCreateOptions(role: Role, userId: string, accessibleLabIds: st
       .from(labs)
       .where(labScopeWhere)
       .orderBy(asc(labs.name)),
-    role === "mahasiswa"
+    role === "dosen"
+      ? Promise.resolve([] as Array<{ id: string; fullName: string; nim: string | null }>)
+      : role === "mahasiswa"
       ? db
           .select({ id: users.id, fullName: users.fullName, nim: users.nim })
           .from(users)
